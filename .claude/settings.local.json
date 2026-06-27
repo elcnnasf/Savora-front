@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cmd /c \"dir /a C:\\\\Users\\\\hp\\\\.claude\\\\projects\\\\C--Users-hp-Desktop-Savora\\\\memory\\\\\")",
+      "WebFetch(domain:linter-click-12521380.figma.site)",
+      "mcp__claude_ai_Figma__get_design_context",
+      "mcp__claude_ai_Figma__get_screenshot",
+      "mcp__claude_ai_Figma__whoami",
+      "PowerShell(cmd /c \"dir /a C:\\\\Users\\\\hp\\\\Desktop\\\\Savora\\\\images\")",
+      "PowerShell(npm *)",
+      "PowerShell(cd \"C:\\\\Users\\\\hp\\\\Desktop\\\\Savora\"; ls node_modules | Where-Object { $_.Name -match \"react-native-worklets|reanimated|gesture|navigation\" } | Select-Object Name)",
+      "PowerShell(Head 10 *)",
+      "PowerShell(New-Item *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell($content = Get-Content \"C:\\\\Users\\\\hp\\\\Desktop\\\\Savora\\\\node_modules\\\\react-native-worklets\\\\plugin\\\\index.js\" -Raw; $idx = $content.IndexOf\\('\"Program\"'\\); if \\($idx -ge 0\\) { Write-Host $content.Substring\\([Math]::Max\\(0,$idx-200\\), 800\\) })",
+      "PowerShell($content = Get-Content \"C:\\\\Users\\\\hp\\\\Desktop\\\\Savora\\\\node_modules\\\\react-native-worklets\\\\plugin\\\\index.js\" -Raw; $idx = $content.IndexOf\\('Program:'\\); if \\($idx -ge 0\\) { $content.Substring\\([Math]::Max\\(0,$idx-100\\), 600\\) } else { \"Not found\" })",
+      "PowerShell($content = Get-Content \"C:\\\\Users\\\\hp\\\\Desktop\\\\Savora\\\\node_modules\\\\react-native-worklets\\\\plugin\\\\index.js\" -Raw; $idx = $content.LastIndexOf\\(\"module.exports\"\\); $content.Substring\\([Math]::Max\\(0,$idx-500\\), 800\\))",
+      "PowerShell(node -e \"console.log\\(require\\('./node_modules/react/package.json'\\).version\\)\" 2>&1; node -e \"console.log\\(require\\('./node_modules/react-native/package.json'\\).peerDependencies.react\\)\" 2>&1)",
+      "PowerShell(netstat *)",
+      "PowerShell(cd \"C:\\\\Users\\\\hp\\\\Desktop\\\\Savora\"; npx tsc --noEmit --skipLibCheck 2>&1 | Where-Object { $_ -notmatch \"node_modules\" } | Select-Object -First 60)",
+      "PowerShell(cd \"C:\\\\Users\\\\hp\\\\Desktop\\\\Savora\\\\src\\\\screens\\\\discover\"; \\(Get-Content \"DiscoverScreen.tsx\"\\) | Select-String \"navigate\\\\\\('AI|navigate\\\\\\('Scan\" | Select-Object -First 10)",
+      "PowerShell(Set-Content *)",
+      "PowerShell(Write-Host \"=== BACKEND CHANGES ===\" ; Get-ChildItem \"C:\\\\Users\\\\hp\\\\Desktop\\\\Savora-Backend\\\\src\" -Recurse -File | Where-Object { $_.LastWriteTime -gt \\(Get-Date\\).AddMinutes\\(-60\\) } | Select-Object FullName, LastWriteTime ; Write-Host \"`n=== FRONTEND CHANGES ===\" ; Get-ChildItem \"C:\\\\Users\\\\hp\\\\Desktop\\\\Savora\\\\src\" -Recurse -File | Where-Object { $_.LastWriteTime -gt \\(Get-Date\\).AddMinutes\\(-60\\) } | Select-Object FullName, LastWriteTime)",
+      "PowerShell(cd \"C:\\\\Users\\\\hp\\\\Desktop\\\\Savora\"; npx tsc --noEmit --skipLibCheck --module commonjs --target es2019 --moduleResolution node --jsx react-native 2>&1 | Out-String | Select-String -Pattern \"src\" -AllMatches | ForEach-Object { $_.Matches } | ForEach-Object { $_.Value } | Select-Object -First 20)",
+      "PowerShell(Get-ChildItem *)"
+    ]
+  }
+}

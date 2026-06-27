@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Savora",
+    "slug": "savora",
+    "scheme": "savora",
+    "version": "2.1.0",
+    "sdkVersion": "54.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#16A34A"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.savora.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#16A34A"
+      },
+      "package": "com.savora.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Savora to access your camera to scan ingredients."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Savora to access your photos to identify ingredients.",
+          "cameraPermission": "Allow Savora to take photos to identify ingredients."
+        }
+      ],
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.222488883686-rqc0m6dgumdgjsk1t49rimuev5q5cci6"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f50dbf48-6283-4622-8fad-202c1f5b0ddd"
+      }
+    }
+  }
+}
