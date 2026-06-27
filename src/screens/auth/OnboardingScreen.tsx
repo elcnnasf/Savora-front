@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
+  View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -75,7 +75,10 @@ export default function OnboardingScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.logo}>savora</Text>
+        <View style={styles.logoRow}>
+          <Image source={require('../../../assets/logo.png')} style={styles.logoImg} resizeMode="contain" />
+          <Text style={styles.logo}>savora</Text>
+        </View>
         <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
           <Text style={styles.skip}>Sign In</Text>
         </TouchableOpacity>
@@ -138,6 +141,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.md,
   },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  logoImg: { width: 28, height: 28, borderRadius: 6 },
   logo: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,

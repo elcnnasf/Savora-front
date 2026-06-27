@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as authApi from '../api/auth';
 import { AiUsageToday } from '../api/auth';
 import { saveTokens, clearTokens, getToken } from '../api/client';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 const ONBOARDING_KEY = 'savora_onboarding_done';
 
@@ -108,6 +109,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signOut: async () => {
     try { await authApi.logout(); } catch { /* ignore */ }
+    try { await GoogleSignin.signOut(); } catch { /* ignore */ }
     await clearTokens();
     set({ isAuthenticated: false, isGuest: true, user: null, token: null });
   },

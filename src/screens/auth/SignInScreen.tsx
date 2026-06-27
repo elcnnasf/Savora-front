@@ -37,7 +37,9 @@ export default function SignInScreen() {
     setGoogleLoading(true);
     try {
       await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
+      // Clear cached session so account picker always appears
+      try { await GoogleSignin.signOut(); } catch {}
+      await GoogleSignin.signIn();
       const { idToken } = await GoogleSignin.getTokens();
       if (!idToken) throw new Error('No ID token received');
       await signInWithGoogle(idToken);
@@ -176,8 +178,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   logoImage: {
-    width: 220,
-    height: 160,
+    width: 100,
+    height: 100,
+    borderRadius: 24,
   },
   heading: {
     fontSize: FontSize.xxxl,

@@ -33,7 +33,8 @@ export default function SignUpScreen() {
     setGoogleLoading(true);
     try {
       await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
+      try { await GoogleSignin.signOut(); } catch {}
+      await GoogleSignin.signIn();
       const { idToken } = await GoogleSignin.getTokens();
       if (!idToken) throw new Error('No ID token received');
       await signInWithGoogle(idToken);

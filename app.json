@@ -12,7 +12,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#16A34A"
+      "backgroundColor": "#FAF7F2"
     },
     "ios": {
       "supportsTablet": false,
@@ -21,7 +21,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#16A34A"
+        "backgroundColor": "#FAF7F2"
       },
       "package": "com.savora.app",
       "permissions": [

@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Dimensions, TextInput,
+  Dimensions, TextInput, Image,
 } from 'react-native';
 import { SafeImage } from '../../components/ui/SafeImage';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,7 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   Camera, Sparkles, CalendarDays, Heart, ChevronRight, Flame, Clock,
-  ShoppingCart, Leaf, Users,
+  ShoppingCart, Users,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
@@ -57,7 +57,7 @@ export default function HomeScreen() {
 
         <View style={styles.header}>
           <View style={styles.logoRow}>
-            <Leaf size={22} color={colors.primary} strokeWidth={2.5} />
+            <Image source={require('../../../assets/logo.png')} style={styles.logoImg} resizeMode="contain" />
             <Text style={styles.logoText}>savora</Text>
           </View>
           <View style={styles.headerRight}>
@@ -259,6 +259,7 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
     paddingBottom: Spacing.md,
   },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  logoImg: { width: 28, height: 28 },
   logoText: { fontSize: FontSize.xl, fontWeight: FontWeight.extrabold, color: c.text },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   premiumBadge: {
