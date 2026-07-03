@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Modal, TextInput, Alert, ActivityIndicator,
+  Modal, TextInput, Alert, ActivityIndicator, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useNavigationState } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../navigation/types';
 import {
-  Sparkles, Coffee, Sun, Moon, Apple, Flame, Plus, X, Trash2, ChevronRight,
+  Sparkles, Coffee, Sun, Moon, Apple, Flame, Plus, X, Trash2, ChevronRight, Search,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
@@ -23,22 +25,24 @@ import { generateMealPlan } from '../../api/ai';
 import { useUserStore } from '../../store/userStore';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
+import { useDiscoverFilterStore } from '../../store/discoverFilterStore';
 
 const LOCATIONS = ['Azerbaijan', 'Turkey', 'Europe', 'Middle East', 'Asia', 'Americas', 'Mediterranean', 'International'];
 const BUDGETS = [
-  { key: 'budget',   labelKey: 'planner.budget',   descKey: 'planner.budgetAffordable' },
-  { key: 'moderate', labelKey: 'planner.moderate',  descKey: 'planner.budgetBalanced' },
-  { key: 'premium',  labelKey: 'planner.premium',   descKey: 'planner.budgetPremium' },
+  { key: 'budget',   labelKey: 'planner.budgetLabel',   descKey: 'planner.budgetAffordable' },
+  { key: 'moderate', labelKey: 'planner.moderateLabel',  descKey: 'planner.budgetBalanced' },
+  { key: 'premium',  labelKey: 'planner.premiumLabel',   descKey: 'planner.budgetPremium' },
 ] as const;
 
 type AiStep = 'location' | 'budget' | 'calorie' | 'dietary' | 'generating';
 
 export default function MealPlannerScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const weekDates  = getCurrentWeekDates();
   const todayIdx   = getTodayIndex();
   const weekStart  = getWeekStart();
   const { mealGoals, preferences, language } = useUserStore();
+  const setDiscoverFilter = useDiscoverFilterStore((s) => s.setPendingQuery);
   const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = makeStyles(colors);
@@ -59,6 +63,9 @@ export default function MealPlannerScreen() {
   const [mealTitle,    setMealTitle]    = useState('');
   const [mealCalories, setMealCalories] = useState('');
   const [saving,       setSaving]       = useState(false);
+
+  const [mealDetailVisible, setMealDetailVisible] = useState(false);
+  const [selectedMeal,      setSelectedMeal]      = useState<MealItem | null>(null);
 
   const [aiModalVisible, setAiModalVisible] = useState(false);
   const [aiStep,         setAiStep]         = useState<AiStep>('location');
@@ -89,7 +96,7 @@ export default function MealPlannerScreen() {
   const pct = Math.min(Math.round((totalCalories / goalCalories) * 100), 100);
 
   async function handleAdd() {
-    if (!mealTitle.trim()) { Alert.alert('Required', 'Please enter a meal name.'); return; }
+    if (!mealTitle.trim()) { Alert.alert(t('errors.requiredTitle'), t('errors.enterMealName')); return; }
     setSaving(true);
     try {
       await addMealItem(weekStart, {
@@ -103,7 +110,7 @@ export default function MealPlannerScreen() {
       setMealCalories('');
       await loadPlan();
     } catch (err: any) {
-      Alert.alert('Error', err?.message ?? 'Could not add meal.');
+      Alert.alert(t('errors.title'), err?.message ?? t('errors.couldNotAddMeal'));
     } finally {
       setSaving(false);
     }
@@ -114,7 +121,7 @@ export default function MealPlannerScreen() {
       await deleteMealItem(itemId);
       await loadPlan();
     } catch (err: any) {
-      Alert.alert('Error', err?.message ?? 'Could not remove meal.');
+      Alert.alert(t('errors.title'), err?.message ?? t('errors.couldNotRemoveMeal'));
     }
   }
 
@@ -134,6 +141,11 @@ export default function MealPlannerScreen() {
     setAiModalVisible(true);
   }
 
+  function openMealDetail(meal: MealItem) {
+    setSelectedMeal(meal);
+    setMealDetailVisible(true);
+  }
+
   async function handleGeneratePlan() {
     setAiStep('generating');
     setGenerating(true);
@@ -148,12 +160,13 @@ export default function MealPlannerScreen() {
         spice_level:         preferences.spiceLevel,
         cuisine_preference:  preferences.cuisines.join(', '),
         language,
-      });
+        today_day_index:     todayIdx,
+      } as any);
       setAiModalVisible(false);
       await loadPlan();
-      Alert.alert('Done!', 'Your AI meal plan for the week has been created.');
+      Alert.alert(t('errors.doneTitle'), t('errors.mealPlanCreated'));
     } catch (err: any) {
-      Alert.alert('Error', err?.message ?? 'Could not generate meal plan.');
+      Alert.alert(t('errors.title'), err?.message ?? t('errors.couldNotGenerateMealPlan'));
       setAiStep('dietary');
     } finally {
       setGenerating(false);
@@ -222,7 +235,9 @@ export default function MealPlannerScreen() {
                   <View style={styles.mealInfo}>
                     <Text style={styles.mealType}>{t(labelKey)}</Text>
                     {meal ? (
-                      <Text style={styles.mealName} numberOfLines={1}>{meal.recipe_title}</Text>
+                      <TouchableOpacity onPress={() => openMealDetail(meal)} activeOpacity={0.7}>
+                        <Text style={styles.mealName} numberOfLines={1}>{meal.recipe_title}</Text>
+                      </TouchableOpacity>
                     ) : (
                       <Text style={styles.mealEmpty}>{t('planner.noMeals')}</Text>
                     )}
@@ -258,7 +273,7 @@ export default function MealPlannerScreen() {
                 <X size={22} color={colors.textMuted} strokeWidth={2} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.inputLabel}>Meal name</Text>
+            <Text style={styles.inputLabel}>{t('planner.mealName')}</Text>
             <TextInput
               style={styles.modalInput}
               value={mealTitle}
@@ -267,7 +282,7 @@ export default function MealPlannerScreen() {
               placeholderTextColor={colors.textMuted}
               autoFocus
             />
-            <Text style={styles.inputLabel}>Calories (optional)</Text>
+            <Text style={styles.inputLabel}>{t('planner.caloriesOptional')}</Text>
             <TextInput
               style={styles.modalInput}
               value={mealCalories}
@@ -276,7 +291,7 @@ export default function MealPlannerScreen() {
               placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
             />
-            <Text style={styles.inputLabel}>Meal type</Text>
+            <Text style={styles.inputLabel}>{t('planner.mealType')}</Text>
             <View style={styles.mealTypePicker}>
               {MEAL_TYPES.map(({ type, labelKey }) => (
                 <TouchableOpacity
@@ -356,7 +371,7 @@ export default function MealPlannerScreen() {
                           activeOpacity={0.8}
                         >
                           <Text style={[styles.budgetLabel, aiBudget === b.key && styles.budgetLabelActive]}>
-                            {b.key.charAt(0).toUpperCase() + b.key.slice(1)}
+                            {t(b.labelKey)}
                           </Text>
                           <Text style={[styles.budgetDesc, aiBudget === b.key && styles.budgetDescActive]}>
                             {t(b.descKey)}
@@ -388,7 +403,7 @@ export default function MealPlannerScreen() {
                       placeholder="e.g. 2000"
                       placeholderTextColor={colors.textMuted}
                     />
-                    <Text style={styles.calorieUnit}>kcal / day</Text>
+                    <Text style={styles.calorieUnit}>{t('planner.kcalPerDay')}</Text>
                     <View style={styles.caloriePresets}>
                       {[1500, 1800, 2000, 2200, 2500].map((c) => (
                         <TouchableOpacity
@@ -437,6 +452,46 @@ export default function MealPlannerScreen() {
             )}
           </View>
         </View>
+      </Modal>
+
+      {/* Meal Detail Modal */}
+      <Modal visible={mealDetailVisible} transparent animationType="slide" onRequestClose={() => setMealDetailVisible(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setMealDetailVisible(false)}>
+          <Pressable style={[styles.modalSheet, { gap: Spacing.lg }]} onPress={() => {}}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle} numberOfLines={2}>{selectedMeal?.recipe_title}</Text>
+              <TouchableOpacity onPress={() => setMealDetailVisible(false)} activeOpacity={0.7}>
+                <X size={22} color={colors.textMuted} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+            {selectedMeal?.calories ? (
+              <Text style={styles.mealDetailCalories}>{selectedMeal.calories} kcal</Text>
+            ) : null}
+            <TouchableOpacity
+              style={[styles.saveBtn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]}
+              activeOpacity={0.85}
+              onPress={() => {
+                setMealDetailVisible(false);
+                setDiscoverFilter(selectedMeal?.recipe_title ?? '');
+                navigation.navigate('Main' as any);
+              }}
+            >
+              <Search size={16} color={colors.primary} strokeWidth={2} />
+              <Text style={[styles.saveBtnText, { color: colors.primary }]}>{t('planner.viewRecipe')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.saveBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                setMealDetailVisible(false);
+                navigation.navigate('AIRecipe', { initialDescription: selectedMeal?.recipe_title });
+              }}
+            >
+              <Sparkles size={16} color={colors.textInverse} strokeWidth={2} />
+              <Text style={styles.saveBtnText}>{t('planner.generateWithAi')}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <View style={styles.footer}>
@@ -499,8 +554,9 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   mealTypeChipActive:     { backgroundColor: c.primary, borderColor: c.primary },
   mealTypeChipText:       { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: c.textSecondary },
   mealTypeChipTextActive: { color: c.textInverse },
-  saveBtn:     { backgroundColor: c.primary, borderRadius: BorderRadius.full, paddingVertical: Spacing.base + 2, alignItems: 'center', marginTop: Spacing.sm },
-  saveBtnText: { color: c.textInverse, fontSize: FontSize.md, fontWeight: FontWeight.semibold },
+  saveBtn:           { backgroundColor: c.primary, borderRadius: BorderRadius.full, paddingVertical: Spacing.base + 2, alignItems: 'center', marginTop: Spacing.sm, flexDirection: 'row', justifyContent: 'center', gap: Spacing.sm },
+  saveBtnText:       { color: c.textInverse, fontSize: FontSize.md, fontWeight: FontWeight.semibold },
+  mealDetailCalories: { fontSize: FontSize.base, color: c.textSecondary, textAlign: 'center' },
 
   aiStepLabel: { fontSize: FontSize.xs, color: c.textMuted, marginTop: 2 },
   aiStepContent: { gap: Spacing.md },

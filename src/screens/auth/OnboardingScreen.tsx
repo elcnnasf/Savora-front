@@ -11,45 +11,50 @@ import { Spacing, BorderRadius } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
 import { AuthStackParamList } from '../../navigation/types';
 import { useAuthStore } from '../../store/authStore';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const { width } = Dimensions.get('window');
 
-const SLIDES = [
-  {
-    id: '1',
-    icon: <ChefHat size={64} color={Colors.primary} strokeWidth={1.5} />,
-    title: 'Cook smarter,\neat better',
-    subtitle: 'Discover thousands of recipes tailored to your taste, dietary needs, and cooking skill.',
-    bg: '#F0FDF4',
-  },
-  {
-    id: '2',
-    icon: <Sparkles size={64} color={Colors.primary} strokeWidth={1.5} />,
-    title: 'AI that cooks\nwith you',
-    subtitle: "Describe what you want and let Savora's AI generate a custom recipe in seconds.",
-    bg: '#EFF6FF',
-  },
-  {
-    id: '3',
-    icon: <CalendarDays size={64} color={Colors.primary} strokeWidth={1.5} />,
-    title: 'Plan your week\neffortlessly',
-    subtitle: 'Smart meal planning with auto-generated shopping lists, synced to your goals.',
-    bg: '#F5F3FF',
-  },
-  {
-    id: '4',
-    icon: <Camera size={64} color={Colors.primary} strokeWidth={1.5} />,
-    title: 'Scan ingredients,\nget recipes',
-    subtitle: 'Point your camera at any ingredient and instantly find recipes that use it.',
-    bg: '#FFF7ED',
-  },
-];
+function getSlides(t: (key: string) => string) {
+  return [
+    {
+      id: '1',
+      icon: <ChefHat size={64} color={Colors.primary} strokeWidth={1.5} />,
+      title: t('onboarding.slide1Title'),
+      subtitle: t('onboarding.slide1Subtitle'),
+      bg: '#F0FDF4',
+    },
+    {
+      id: '2',
+      icon: <Sparkles size={64} color={Colors.primary} strokeWidth={1.5} />,
+      title: t('onboarding.slide2Title'),
+      subtitle: t('onboarding.slide2Subtitle'),
+      bg: '#EFF6FF',
+    },
+    {
+      id: '3',
+      icon: <CalendarDays size={64} color={Colors.primary} strokeWidth={1.5} />,
+      title: t('onboarding.slide3Title'),
+      subtitle: t('onboarding.slide3Subtitle'),
+      bg: '#F5F3FF',
+    },
+    {
+      id: '4',
+      icon: <Camera size={64} color={Colors.primary} strokeWidth={1.5} />,
+      title: t('onboarding.slide4Title'),
+      subtitle: t('onboarding.slide4Subtitle'),
+      bg: '#FFF7ED',
+    },
+  ];
+}
 
 type Nav = NativeStackNavigationProp<AuthStackParamList>;
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<Nav>();
-  const { hasSeenOnboarding, checkOnboarding, continueAsGuest } = useAuthStore();
+  const { t } = useTranslation();
+  const SLIDES = getSlides(t);
+  const { isAuthenticated, checkOnboarding, continueAsGuest, completeOnboarding } = useAuthStore();
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
@@ -63,7 +68,11 @@ export default function OnboardingScreen() {
     if (activeIndex < SLIDES.length - 1) {
       flatListRef.current?.scrollToIndex({ index: activeIndex + 1 });
       setActiveIndex(activeIndex + 1);
+    } else if (isAuthenticated) {
+      // post-login intro — marking it done flips AppNavigator over to Main
+      completeOnboarding();
     } else {
+      completeOnboarding();
       navigation.navigate('SignIn');
     }
   }
@@ -79,9 +88,15 @@ export default function OnboardingScreen() {
           <Image source={require('../../../assets/logo.png')} style={styles.logoImg} resizeMode="contain" />
           <Text style={styles.logo}>savora</Text>
         </View>
-        <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
-          <Text style={styles.skip}>Sign In</Text>
-        </TouchableOpacity>
+        {isAuthenticated ? (
+          <TouchableOpacity onPress={completeOnboarding}>
+            <Text style={styles.skip}>{t('common.skip')}</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
+            <Text style={styles.skip}>{t('common.signIn')}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <FlatList
@@ -112,19 +127,21 @@ export default function OnboardingScreen() {
 
         <TouchableOpacity style={styles.nextBtn} onPress={handleNext} activeOpacity={0.85}>
           <Text style={styles.nextText}>
-            {activeIndex === SLIDES.length - 1 ? 'Get Started' : 'Continue'}
+            {activeIndex === SLIDES.length - 1 ? t('common.getStarted') : t('common.continue')}
           </Text>
         </TouchableOpacity>
 
-        {activeIndex === SLIDES.length - 1 ? (
+        {isAuthenticated ? (
+          <View style={styles.signInLink} />
+        ) : activeIndex === SLIDES.length - 1 ? (
           <TouchableOpacity onPress={() => navigation.navigate('SignIn')} style={styles.signInLink}>
             <Text style={styles.signInText}>
-              Already have an account? <Text style={styles.signInAccent}>Sign in</Text>
+              {t('auth.haveAccount')} <Text style={styles.signInAccent}>{t('common.signIn')}</Text>
             </Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity onPress={handleGuest} style={styles.signInLink}>
-            <Text style={styles.guestText}>Browse as Guest</Text>
+            <Text style={styles.guestText}>{t('common.browseAsGuest')}</Text>
           </TouchableOpacity>
         )}
       </View>

@@ -15,6 +15,7 @@ import { FontSize, FontWeight } from '../../constants/typography';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/authStore';
 import { AuthStackParamList } from '../../navigation/types';
+import { useTranslation } from '../../hooks/useTranslation';
 
 GoogleSignin.configure({
   webClientId: '222488883686-gsh76lklfl61prhi3bb4mssr4t528m1v.apps.googleusercontent.com',
@@ -26,6 +27,7 @@ type Nav = NativeStackNavigationProp<AuthStackParamList>;
 
 export default function SignInScreen() {
   const navigation = useNavigation<Nav>();
+  const { t } = useTranslation();
   const { signIn, signInWithGoogle } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,9 +45,10 @@ export default function SignInScreen() {
       const { idToken } = await GoogleSignin.getTokens();
       if (!idToken) throw new Error('No ID token received');
       await signInWithGoogle(idToken);
+      if (navigation.canGoBack()) navigation.goBack();
     } catch (err: any) {
       if (err.code === statusCodes.SIGN_IN_CANCELLED) return;
-      Alert.alert('Google sign in failed', err?.message ?? 'Something went wrong.');
+      Alert.alert(t('auth.googleSignInFailed'), err?.message ?? t('common.error'));
     } finally {
       setGoogleLoading(false);
     }
@@ -53,14 +56,15 @@ export default function SignInScreen() {
 
   async function handleSignIn() {
     if (!email || !password) {
-      Alert.alert('Missing fields', 'Please enter your email and password.');
+      Alert.alert(t('auth.missingFields'), t('auth.missingFieldsSignIn'));
       return;
     }
     setLoading(true);
     try {
       await signIn(email, password);
+      if (navigation.canGoBack()) navigation.goBack();
     } catch (err: any) {
-      Alert.alert('Sign in failed', err?.message ?? 'Please check your credentials and try again.');
+      Alert.alert(t('auth.signInFailed'), err?.message ?? t('auth.checkCredentials'));
     } finally {
       setLoading(false);
     }
@@ -79,23 +83,23 @@ export default function SignInScreen() {
         >
           <View style={styles.logoContainer}>
             <Image
-              source={require('../../../assets/logo.png')}
+              source={require('../../../assets/logo-chef.png')}
               style={styles.logoImage}
               resizeMode="contain"
             />
           </View>
 
-          <Text style={styles.heading}>Welcome back</Text>
-          <Text style={styles.subheading}>Sign in to your account</Text>
+          <Text style={styles.heading}>{t('auth.welcomeBack')}</Text>
+          <Text style={styles.subheading}>{t('auth.signInSubtitle')}</Text>
 
           <View style={styles.form}>
             <View style={styles.field}>
-              <Text style={styles.label}>Email</Text>
+              <Text style={styles.label}>{t('auth.email')}</Text>
               <TextInput
                 style={styles.input}
                 value={email}
                 onChangeText={setEmail}
-                placeholder="you@example.com"
+                placeholder={t('auth.emailPlaceholder')}
                 placeholderTextColor={Colors.textMuted}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -104,13 +108,13 @@ export default function SignInScreen() {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Password</Text>
+              <Text style={styles.label}>{t('auth.password')}</Text>
               <View style={styles.passwordRow}>
                 <TextInput
                   style={[styles.input, styles.passwordInput]}
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="Enter your password"
+                  placeholder={t('auth.passwordPlaceholder')}
                   placeholderTextColor={Colors.textMuted}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
@@ -127,15 +131,15 @@ export default function SignInScreen() {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.forgotRow}>
-              <Text style={styles.forgot}>Forgot password?</Text>
+            <TouchableOpacity style={styles.forgotRow} onPress={() => navigation.navigate('ForgotPassword')}>
+              <Text style={styles.forgot}>{t('auth.forgotPassword')}</Text>
             </TouchableOpacity>
 
-            <Button label="Sign In" onPress={handleSignIn} loading={loading} style={styles.btn} />
+            <Button label={t('common.signIn')} onPress={handleSignIn} loading={loading} style={styles.btn} />
 
             <View style={styles.dividerRow}>
               <View style={styles.divider} />
-              <Text style={styles.dividerText}>or continue with</Text>
+              <Text style={styles.dividerText}>{t('auth.orContinue')}</Text>
               <View style={styles.divider} />
             </View>
 
@@ -152,7 +156,7 @@ export default function SignInScreen() {
                 <Path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
               </Svg>
               <Text style={styles.googleBtnText}>
-                {googleLoading ? 'Signing in...' : 'Continue with Google'}
+                {googleLoading ? t('auth.signingIn') : t('auth.continueWithGoogle')}
               </Text>
             </TouchableOpacity>
 
@@ -161,7 +165,7 @@ export default function SignInScreen() {
               onPress={() => navigation.navigate('SignUp')}
               activeOpacity={0.8}
             >
-              <Text style={styles.outlineBtnText}>Create an account</Text>
+              <Text style={styles.outlineBtnText}>{t('auth.createAnAccount')}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  Alert, ActivityIndicator, Dimensions, ScrollView,
+  Alert, ActivityIndicator, Dimensions, ScrollView, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -10,7 +10,7 @@ import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import {
   X, Camera, Image as ImageIcon, Sparkles, RotateCcw,
-  Zap, ZapOff, ChevronRight, RefreshCw,
+  Zap, ZapOff, ChevronRight, RefreshCw, Plus, PenLine,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
@@ -25,7 +25,7 @@ const { width, height } = Dimensions.get('window');
 const CORNER = 24;
 const CORNER_T = 3;
 
-type Phase = 'viewfinder' | 'scanning' | 'result';
+type Phase = 'choice' | 'viewfinder' | 'scanning' | 'result' | 'manual';
 
 export default function ScanScreen() {
   const navigation = useNavigation<Nav>();
@@ -37,12 +37,23 @@ export default function ScanScreen() {
 
   const [facing, setFacing]           = useState<CameraType>('back');
   const [flash, setFlash]             = useState(false);
-  const [phase, setPhase]             = useState<Phase>('viewfinder');
+  const [phase, setPhase]             = useState<Phase>('choice');
   const [previewUri, setPreviewUri]   = useState<string | null>(null);
   const [ingredients, setIngredients] = useState<string[]>([]);
   const [scanError, setScanError]     = useState<string | null>(null);
+  const [manualInput, setManualInput] = useState('');
+
+  // Reject oversized images before they hit the AI endpoint — a huge payload
+  // wastes bandwidth and model cost. base64 inflates bytes ~4/3, so ~6.5MB of
+  // base64 ≈ a ~5MB image, plenty for ingredient detection.
+  const MAX_BASE64_LEN = 6_500_000;
 
   const doScan = useCallback(async (base64: string) => {
+    if (base64.length > MAX_BASE64_LEN) {
+      setScanError(t('scan.imageTooLarge'));
+      setPhase('result');
+      return;
+    }
     setPhase('scanning');
     setScanError(null);
     try {
@@ -69,18 +80,18 @@ export default function ScanScreen() {
         base64: true,
         exif: false,
       });
-      if (!photo?.base64) { Alert.alert('Error', 'Could not capture photo.'); return; }
+      if (!photo?.base64) { Alert.alert(t('errors.title'), t('errors.couldNotCapturePhoto')); return; }
       setPreviewUri(photo.uri);
       await doScan(photo.base64);
     } catch {
-      Alert.alert('Error', 'Failed to take photo.');
+      Alert.alert(t('errors.title'), t('errors.failedToTakePhoto'));
     }
   }
 
   async function pickFromGallery() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow photo library access in Settings.');
+      Alert.alert(t('errors.permissionRequired'), t('errors.permissionRequiredMsg'));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -92,16 +103,26 @@ export default function ScanScreen() {
     });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
-    if (!asset.base64) { Alert.alert('Error', 'Could not read image data.'); return; }
+    if (!asset.base64) { Alert.alert(t('errors.title'), t('errors.couldNotReadImage')); return; }
     setPreviewUri(asset.uri);
     await doScan(asset.base64);
   }
 
   function reset() {
-    setPhase('viewfinder');
+    setPhase('choice');
     setPreviewUri(null);
     setIngredients([]);
     setScanError(null);
+    setManualInput('');
+  }
+
+  function addManualIngredient() {
+    const trimmed = manualInput.trim();
+    if (!trimmed) return;
+    if (!ingredients.includes(trimmed)) {
+      setIngredients((prev) => [...prev, trimmed]);
+    }
+    setManualInput('');
   }
 
   function removeIngredient(name: string) {
@@ -115,7 +136,171 @@ export default function ScanScreen() {
 
   function goToAI() {
     if (ingredients.length === 0) return;
-    (navigation as any).navigate('AIRecipe', { ingredients });
+    navigation.navigate('AIRecipe', { ingredients });
+  }
+
+  if (phase === 'choice') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()}>
+            <X size={20} color={colors.text} strokeWidth={2.5} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{t('scan.choiceTitle')}</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <View style={styles.choiceContainer}>
+          <Text style={styles.choiceSubtitle}>{t('scan.choiceSubtitle')}</Text>
+
+          <TouchableOpacity
+            style={styles.choiceCard}
+            onPress={() => setPhase('viewfinder')}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.choiceIconBox, { backgroundColor: colors.primary + '18' }]}>
+              <Camera size={36} color={colors.primary} strokeWidth={1.8} />
+            </View>
+            <View style={styles.choiceTextBox}>
+              <Text style={styles.choiceCardTitle}>{t('scan.scanIngredient')}</Text>
+              <Text style={styles.choiceCardDesc}>{t('scan.scanIngredientDesc')}</Text>
+            </View>
+            <ChevronRight size={20} color={colors.textMuted} strokeWidth={2} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.choiceCard}
+            onPress={() => setPhase('manual')}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.choiceIconBox, { backgroundColor: '#10B98118' }]}>
+              <PenLine size={36} color="#10B981" strokeWidth={1.8} />
+            </View>
+            <View style={styles.choiceTextBox}>
+              <Text style={styles.choiceCardTitle}>{t('scan.addManualTitle')}</Text>
+              <Text style={styles.choiceCardDesc}>{t('scan.addManualDesc')}</Text>
+            </View>
+            <ChevronRight size={20} color={colors.textMuted} strokeWidth={2} />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (phase === 'scanning') {
+    return (
+      <View style={styles.darkFull}>
+        {previewUri && (
+          <Image source={{ uri: previewUri }} style={StyleSheet.absoluteFillObject} blurRadius={2} />
+        )}
+        <View style={styles.scanOverlay}>
+          <View style={styles.scanSpinner}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+          <Text style={styles.scanningTitle}>{t('scan.analyzing')}</Text>
+          <Text style={styles.scanningSubtitle}>{t('scan.analyzingDesc')}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (phase === 'result' || phase === 'manual') {
+    const isManual = phase === 'manual';
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.closeBtn} onPress={() => isManual ? setPhase('choice') : navigation.goBack()}>
+            <X size={20} color={colors.text} strokeWidth={2.5} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{isManual ? t('scan.manualMode') : t('scan.detectedTitle')}</Text>
+          {isManual ? (
+            <View style={{ width: 40 }} />
+          ) : (
+            <TouchableOpacity style={styles.rescanBtn} onPress={reset} activeOpacity={0.8}>
+              <RefreshCw size={15} color={colors.primary} strokeWidth={2.5} />
+              <Text style={styles.rescanText}>{t('scan.rescan')}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {!isManual && previewUri && (
+          <Image source={{ uri: previewUri }} style={styles.preview} resizeMode="cover" />
+        )}
+
+        {scanError ? (
+          <View style={styles.errorCard}>
+            <Text style={styles.errorText}>{scanError}</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={reset} activeOpacity={0.8}>
+              <Text style={styles.retryText}>{t('common.retry')}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <View style={styles.foundHeader}>
+              <View style={styles.foundBadge}>
+                <Sparkles size={13} color={colors.primary} strokeWidth={2} />
+                <Text style={styles.foundBadgeText}>{ingredients.length} {isManual ? t('scan.addedIngredients') : t('scan.foundIngredients')}</Text>
+              </View>
+              <Text style={styles.foundHint}>{t('scan.tapToRemove')}</Text>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.tagContainer}
+            >
+              {ingredients.map((name) => (
+                <TouchableOpacity
+                  key={name}
+                  style={styles.tag}
+                  onPress={() => removeIngredient(name)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.tagText}>{name}</Text>
+                  <X size={12} color={colors.primary} strokeWidth={2.5} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.actionFooter}>
+              <View style={styles.manualInputRow}>
+                <TextInput
+                  style={styles.manualInput}
+                  value={manualInput}
+                  onChangeText={setManualInput}
+                  placeholder={t('scan.addManualPlaceholder')}
+                  placeholderTextColor={colors.textMuted}
+                  onSubmitEditing={addManualIngredient}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity style={styles.manualAddBtn} onPress={addManualIngredient} activeOpacity={0.8}>
+                  <Plus size={18} color={colors.textInverse} strokeWidth={2.5} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.matchBtn, ingredients.length === 0 && styles.disabledBtn]}
+                onPress={goToMatches}
+                activeOpacity={0.85}
+                disabled={ingredients.length === 0}
+              >
+                <Text style={styles.matchBtnText}>{t('scan.findMatching')}</Text>
+                <ChevronRight size={18} color={colors.primary} strokeWidth={2.5} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.generateBtn, ingredients.length === 0 && styles.disabledBtn]}
+                onPress={goToAI}
+                activeOpacity={0.85}
+                disabled={ingredients.length === 0}
+              >
+                <Sparkles size={17} color={colors.textInverse} strokeWidth={2.5} />
+                <Text style={styles.generateBtnText}>{t('scan.generateWithAI')}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </SafeAreaView>
+    );
   }
 
   if (!permission) {
@@ -150,102 +335,6 @@ export default function ScanScreen() {
             <Text style={styles.galleryFallbackText}>{t('scan.galleryFallback')}</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (phase === 'scanning') {
-    return (
-      <View style={styles.darkFull}>
-        {previewUri && (
-          <Image source={{ uri: previewUri }} style={StyleSheet.absoluteFillObject} blurRadius={2} />
-        )}
-        <View style={styles.scanOverlay}>
-          <View style={styles.scanSpinner}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-          <Text style={styles.scanningTitle}>{t('scan.analyzing')}</Text>
-          <Text style={styles.scanningSubtitle}>{t('scan.analyzingDesc')}</Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (phase === 'result') {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()}>
-            <X size={20} color={colors.text} strokeWidth={2.5} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Detected Ingredients</Text>
-          <TouchableOpacity style={styles.rescanBtn} onPress={reset} activeOpacity={0.8}>
-            <RefreshCw size={15} color={colors.primary} strokeWidth={2.5} />
-            <Text style={styles.rescanText}>{t('scan.rescan')}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {previewUri && (
-          <Image source={{ uri: previewUri }} style={styles.preview} resizeMode="cover" />
-        )}
-
-        {scanError ? (
-          <View style={styles.errorCard}>
-            <Text style={styles.errorText}>{scanError}</Text>
-            <TouchableOpacity style={styles.retryBtn} onPress={reset} activeOpacity={0.8}>
-              <Text style={styles.retryText}>{t('common.retry')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            <View style={styles.foundHeader}>
-              <View style={styles.foundBadge}>
-                <Sparkles size={13} color={colors.primary} strokeWidth={2} />
-                <Text style={styles.foundBadgeText}>{ingredients.length} {t('scan.foundIngredients')}</Text>
-              </View>
-              <Text style={styles.foundHint}>{t('scan.tapToRemove')}</Text>
-            </View>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.tagContainer}
-            >
-              {ingredients.map((name) => (
-                <TouchableOpacity
-                  key={name}
-                  style={styles.tag}
-                  onPress={() => removeIngredient(name)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.tagText}>{name}</Text>
-                  <X size={12} color={colors.primary} strokeWidth={2.5} />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <View style={styles.actionFooter}>
-              <TouchableOpacity
-                style={[styles.matchBtn, ingredients.length === 0 && styles.disabledBtn]}
-                onPress={goToMatches}
-                activeOpacity={0.85}
-                disabled={ingredients.length === 0}
-              >
-                <Text style={styles.matchBtnText}>{t('scan.findMatching')}</Text>
-                <ChevronRight size={18} color={colors.primary} strokeWidth={2.5} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.generateBtn, ingredients.length === 0 && styles.disabledBtn]}
-                onPress={goToAI}
-                activeOpacity={0.85}
-                disabled={ingredients.length === 0}
-              >
-                <Sparkles size={17} color={colors.textInverse} strokeWidth={2.5} />
-                <Text style={styles.generateBtnText}>{t('scan.generateWithAI')}</Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
       </SafeAreaView>
     );
   }
@@ -308,6 +397,33 @@ export default function ScanScreen() {
 const makeStyles = (c: AppColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background },
   darkFull:  { flex: 1, backgroundColor: '#000' },
+
+  choiceContainer: {
+    flex: 1, paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.xl, gap: Spacing.base,
+  },
+  choiceSubtitle: {
+    fontSize: FontSize.base, color: c.textMuted,
+    textAlign: 'center', marginBottom: Spacing.md,
+  },
+  choiceCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: c.surface, borderRadius: BorderRadius.xl,
+    padding: Spacing.lg, gap: Spacing.base,
+    borderWidth: 1.5, borderColor: c.border,
+    ...Shadow.sm,
+  },
+  choiceIconBox: {
+    width: 68, height: 68, borderRadius: BorderRadius.xl,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  choiceTextBox: { flex: 1, gap: 4 },
+  choiceCardTitle: {
+    fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: c.text,
+  },
+  choiceCardDesc: {
+    fontSize: FontSize.sm, color: c.textMuted, lineHeight: 18,
+  },
   center: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: Spacing.xl, gap: Spacing.md,
@@ -436,6 +552,19 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   },
   tagText: { fontSize: FontSize.sm, color: c.primary, fontWeight: FontWeight.medium },
 
+  manualInputRow: {
+    flexDirection: 'row', gap: Spacing.sm,
+  },
+  manualInput: {
+    flex: 1, backgroundColor: c.surface, borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
+    fontSize: FontSize.sm, color: c.text,
+    borderWidth: 1.5, borderColor: c.border,
+  },
+  manualAddBtn: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center',
+  },
   actionFooter: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: c.background, borderTopWidth: 1, borderTopColor: c.border,

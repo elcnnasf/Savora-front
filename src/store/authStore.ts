@@ -4,14 +4,32 @@ import * as authApi from '../api/auth';
 import { AiUsageToday } from '../api/auth';
 import { saveTokens, clearTokens, getToken } from '../api/client';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { useRecentlyViewedStore } from './recentlyViewedStore';
+import { useShoppingListStore } from './shoppingListStore';
+import { useCookingProgressStore } from './cookingProgressStore';
+import { useUserStore } from './userStore';
+
+function clearUserLocalStores() {
+  useRecentlyViewedStore.getState().clear();
+  useCookingProgressStore.getState().clearAll();
+  useShoppingListStore.setState({ items: {} as any });
+  useUserStore.getState().resetUserData();
+}
 
 const ONBOARDING_KEY = 'savora_onboarding_done';
+const USER_CACHE_KEY = 'savora_user_cache';
+
+// fetch throws TypeError("Network request failed") when the device is offline
+function isNetworkError(e: any): boolean {
+  return e instanceof TypeError || /network request failed|failed to fetch/i.test(e?.message ?? '');
+}
 
 interface User {
   id: string;
   name: string;
   email: string;
   isPremium: boolean;
+  isPro: boolean;
   memberSince: string;
   avatar?: string;
   aiUsageToday?: AiUsageToday;
@@ -32,7 +50,9 @@ interface AuthState {
   continueAsGuest: () => Promise<void>;
   leaveGuest: () => void;
   checkOnboarding: () => Promise<void>;
+  completeOnboarding: () => void;
   refreshUsage: () => Promise<void>;
+  updateSubscription: (plan: 'premium' | 'pro' | 'free') => void;
 }
 
 function toUser(apiUser: authApi.ApiUser, email?: string): User {
@@ -41,6 +61,7 @@ function toUser(apiUser: authApi.ApiUser, email?: string): User {
     name: apiUser.name,
     email: email ?? apiUser.email ?? '',
     isPremium: apiUser.is_premium,
+    isPro:     apiUser.is_pro ?? false,
     memberSince: apiUser.member_since
       ? new Date(apiUser.member_since).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
       : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
@@ -62,6 +83,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ hasSeenOnboarding: done === 'true' });
   },
 
+  completeOnboarding: () => {
+    set({ hasSeenOnboarding: true });
+    AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+  },
+
   continueAsGuest: async () => {
     set({ isGuest: true, hasSeenOnboarding: true });
     AsyncStorage.setItem(ONBOARDING_KEY, 'true');
@@ -75,13 +101,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const res = await authApi.login(email, password);
     const { user, session } = res.data;
     await saveTokens(session.access_token, session.refresh_token);
-    await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    clearUserLocalStores();
+    const u = toUser(user, email);
+    AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(u));
+    // hasSeenOnboarding intentionally NOT set here — first-time users who signed in
+    // without finishing the intro slides get them once, right after login
     set({
       isAuthenticated: true,
       isGuest: false,
-      user: toUser(user, email),
+      user: u,
       token: session.access_token,
-      hasSeenOnboarding: true,
     });
   },
 
@@ -89,13 +118,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const res = await authApi.googleSignIn(idToken);
     const { user, session } = res.data;
     await saveTokens(session.access_token, session.refresh_token);
-    await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    clearUserLocalStores();
+    const u = toUser(user);
+    AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(u));
     set({
       isAuthenticated: true,
       isGuest: false,
-      user: toUser(user),
+      user: u,
       token: session.access_token,
-      hasSeenOnboarding: true,
     });
   },
 
@@ -111,6 +141,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try { await authApi.logout(); } catch { /* ignore */ }
     try { await GoogleSignin.signOut(); } catch { /* ignore */ }
     await clearTokens();
+    await AsyncStorage.removeItem(USER_CACHE_KEY);
+    clearUserLocalStores();
     set({ isAuthenticated: false, isGuest: true, user: null, token: null });
   },
 
@@ -129,14 +161,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       const res = await authApi.getMe();
+      const u = toUser(res.data);
+      AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(u));
       set({
         isAuthenticated: true,
         isGuest: false,
-        user: toUser(res.data),
+        user: u,
         token,
         isLoading: false,
       });
-    } catch {
+    } catch (e) {
+      // Offline app start must NOT log the user out — restore the cached profile
+      // and keep the token so saved content stays accessible without internet
+      if (isNetworkError(e)) {
+        const raw = await AsyncStorage.getItem(USER_CACHE_KEY);
+        if (raw) {
+          set({
+            isAuthenticated: true,
+            isGuest: false,
+            user: JSON.parse(raw),
+            token,
+            isLoading: false,
+          });
+          return;
+        }
+      }
       await clearTokens();
       set({ isGuest: seenOnboarding, isLoading: false });
     }
@@ -151,5 +200,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: s.user ? { ...s.user, aiUsageToday: res.data.ai_usage_today } : s.user,
       }));
     } catch { /* silent */ }
+  },
+
+  updateSubscription: (plan) => {
+    set((s) => s.user ? {
+      user: {
+        ...s.user,
+        isPremium: plan === 'premium' || plan === 'pro',
+        isPro:     plan === 'pro',
+      },
+    } : {});
   },
 }));

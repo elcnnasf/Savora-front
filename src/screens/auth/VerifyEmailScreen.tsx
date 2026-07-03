@@ -8,6 +8,7 @@ import { Colors } from '../../constants/colors';
 import { Spacing, BorderRadius } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
 import { AuthStackParamList } from '../../navigation/types';
+import { useTranslation } from '../../hooks/useTranslation';
 
 type Nav = NativeStackNavigationProp<AuthStackParamList>;
 type Route = RouteProp<AuthStackParamList, 'VerifyEmail'>;
@@ -15,6 +16,7 @@ type Route = RouteProp<AuthStackParamList, 'VerifyEmail'>;
 export default function VerifyEmailScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
+  const { t } = useTranslation();
   const { email } = route.params;
 
   return (
@@ -24,15 +26,15 @@ export default function VerifyEmailScreen() {
           <MailCheck size={48} color={Colors.primary} strokeWidth={1.5} />
         </View>
 
-        <Text style={styles.heading}>Check your email</Text>
+        <Text style={styles.heading}>{t('auth.checkYourEmail')}</Text>
 
         <Text style={styles.body}>
-          We sent a verification link to{'\n'}
+          {t('auth.verificationSent')}{'\n'}
           <Text style={styles.emailText}>{email}</Text>
         </Text>
 
         <Text style={styles.hint}>
-          Click the link in the email to activate your account, then come back here to sign in.
+          {t('auth.verificationHint')}
         </Text>
 
         <TouchableOpacity
@@ -40,7 +42,7 @@ export default function VerifyEmailScreen() {
           onPress={() => navigation.navigate('SignIn')}
           activeOpacity={0.8}
         >
-          <Text style={styles.signInBtnText}>Go to Sign In</Text>
+          <Text style={styles.signInBtnText}>{t('auth.goToSignIn')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -49,7 +51,7 @@ export default function VerifyEmailScreen() {
           activeOpacity={0.7}
         >
           <ArrowLeft size={15} color={Colors.textSecondary} strokeWidth={2} />
-          <Text style={styles.backText}>Back to sign up</Text>
+          <Text style={styles.backText}>{t('auth.backToSignUp')}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

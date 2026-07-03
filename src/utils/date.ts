@@ -35,11 +35,13 @@ export function getTodayIndex(): number {
   return day === 0 ? 6 : day - 1;
 }
 
-export function getGreeting(): string {
+// Returns a translation key under "home." so the greeting is localized.
+// Night hours (until 6am) count as evening — no "good morning" at 1am.
+export function getGreetingKey(): 'goodMorning' | 'goodAfternoon' | 'goodEvening' {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (hour >= 6 && hour < 12) return 'goodMorning';
+  if (hour >= 12 && hour < 17) return 'goodAfternoon';
+  return 'goodEvening';
 }
 
 export function formatMonthYear(date: Date): string {

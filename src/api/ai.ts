@@ -48,6 +48,28 @@ export function scanIngredients(imageBase64: string) {
   });
 }
 
+export interface RecipeSuggestion {
+  name: string;      // user's language
+  nameEn: string;    // English (used for recipe generation)
+  description: string;
+  mainIngredients: string[];
+  cuisine: string;
+  cookTime: number;
+  difficulty: 'easy' | 'medium' | 'hard';
+}
+
+interface SuggestRecipesResponse {
+  success: boolean;
+  data: { suggestions: RecipeSuggestion[] };
+}
+
+export function suggestRecipes(params: { query: string; language?: string }) {
+  return apiFetch<SuggestRecipesResponse>('/ai/suggest-recipes', {
+    method: 'POST',
+    body: params,
+  });
+}
+
 export function generateRecipe(params: {
   description?: string;
   ingredients?: string[];

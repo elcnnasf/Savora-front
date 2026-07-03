@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# secrets & env
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+google-services.json
+GoogleService-Info.plist
+android/app/google-services.json
+
+# expo / build output
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+
+# native
+ios/
+android/.gradle/
+android/build/
+android/app/build/
+*.orig.*
+
+# misc
+.DS_Store
+npm-debug.*

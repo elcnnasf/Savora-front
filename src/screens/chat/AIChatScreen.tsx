@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform, Alert,
@@ -37,16 +37,31 @@ interface NavAction {
 
 const NAV_INTENTS: { keywords: string[]; label: string; screen: keyof RootStackParamList; icon: React.ComponentType<any> }[] = [
   {
-    keywords: ['meal plan', 'meal planner', 'weekly plan', 'plan my meals', 'plan your meals', 'meal schedule'],
-    label: 'Open Meal Planner', screen: 'MealPlanner', icon: CalendarDays,
+    keywords: [
+      'meal plan', 'meal planner', 'weekly plan', 'plan my meals', 'plan your meals', 'meal schedule',
+      'yemək planı', 'yemək planlayıcı', 'həftəlik plan',
+      'план питания', 'планировщик питания', 'недельный план',
+      'öğün planı', 'yemek planı', 'haftalık plan',
+    ],
+    label: 'chat.openMealPlanner', screen: 'MealPlanner', icon: CalendarDays,
   },
   {
-    keywords: ['shopping list', 'grocery list', 'buy ingredients', 'shopping'],
-    label: 'Open Shopping List', screen: 'ShoppingList', icon: UtensilsCrossed,
+    keywords: [
+      'shopping list', 'grocery list', 'buy ingredients', 'shopping',
+      'alış-veriş siyahısı', 'alış-veriş',
+      'список покупок', 'покупк',
+      'alışveriş listesi', 'alışveriş',
+    ],
+    label: 'chat.openShoppingList', screen: 'ShoppingList', icon: UtensilsCrossed,
   },
   {
-    keywords: ['generate recipe', 'create recipe', 'ai recipe', 'make a recipe', 'generate a recipe', 'build a recipe'],
-    label: 'Generate a Recipe', screen: 'AIRecipe', icon: Sparkles,
+    keywords: [
+      'generate recipe', 'create recipe', 'ai recipe', 'make a recipe', 'generate a recipe', 'build a recipe',
+      'resept yarat', 'resept generasiya', 'ai resept',
+      'создать рецепт', 'сгенерировать рецепт',
+      'tarif oluştur', 'tarif üret',
+    ],
+    label: 'chat.generateRecipeAction', screen: 'AIRecipe', icon: Sparkles,
   },
 ];
 
@@ -71,11 +86,17 @@ export default function AIChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const historyRef = useRef<ChatMessage[]>([]);
 
+  // Clear chat whenever the logged-in user changes (account switch)
+  useEffect(() => {
+    setMessages([]);
+    historyRef.current = [];
+  }, [user?.id]);
+
   const QUICK_ACTIONS = [
-    { label: t('chat.getRecipeIdeas'),  icon: UtensilsCrossed, prompt: 'Give me some high-protein recipe ideas.' },
-    { label: t('chat.askCooking'),      icon: MessageCircle,   prompt: 'How do I properly sear chicken breast?' },
-    { label: t('chat.planMeals'),       icon: CalendarDays,    prompt: 'Help me plan a healthy meal plan for this week.' },
-    { label: t('chat.nutritionAdvice'), icon: Apple,           prompt: 'What are the best foods for muscle building?' },
+    { label: t('chat.getRecipeIdeas'),  icon: UtensilsCrossed, prompt: t('chat.getRecipeIdeasPrompt') },
+    { label: t('chat.askCooking'),      icon: MessageCircle,   prompt: t('chat.askCookingPrompt') },
+    { label: t('chat.planMeals'),       icon: CalendarDays,    prompt: t('chat.planMealsPrompt') },
+    { label: t('chat.nutritionAdvice'), icon: Apple,           prompt: t('chat.nutritionAdvicePrompt') },
   ];
 
   async function sendMessage(text: string) {
@@ -93,8 +114,8 @@ export default function AIChatScreen() {
 
       historyRef.current = [
         ...historyRef.current,
-        { role: 'user',      content: text.trim() },
-        { role: 'assistant', content: reply },
+        { role: 'user' as const,      content: text.trim() },
+        { role: 'assistant' as const, content: reply },
       ].slice(-20);
 
       const actions = detectNavActions(reply);
@@ -107,7 +128,7 @@ export default function AIChatScreen() {
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err: any) {
-      Alert.alert('Error', err.message ?? 'Could not reach AI. Is the server running?');
+      Alert.alert(t('errors.title'), err.message ?? t('errors.couldNotReachAI'));
     } finally {
       setIsTyping(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -115,7 +136,7 @@ export default function AIChatScreen() {
   }
 
   function clearChat() {
-    Alert.alert(t('chat.clearChat'), 'Clear all messages?', [
+    Alert.alert(t('chat.clearChat'), t('chat.clearConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
         text: t('common.clear'),
@@ -138,7 +159,7 @@ export default function AIChatScreen() {
           <View style={styles.guestAvatarLg}>
             <Sparkles size={40} color={colors.textInverse} strokeWidth={1.5} />
           </View>
-          <Text style={styles.guestTitle}>AI Cooking Assistant</Text>
+          <Text style={styles.guestTitle}>{t('chat.assistantTitle')}</Text>
           <Text style={styles.guestSubtitle}>{t('chat.signInDesc')}</Text>
           <TouchableOpacity
             style={styles.signInBtn}
@@ -167,9 +188,9 @@ export default function AIChatScreen() {
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         style={{ flex: 1 }}
-        keyboardVerticalOffset={90}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <ScrollView
           ref={scrollRef}
@@ -182,7 +203,7 @@ export default function AIChatScreen() {
               <Sparkles size={18} color={colors.textInverse} strokeWidth={2.5} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.greetingTitle}>Hi {user?.name ?? 'there'}! 👋</Text>
+              <Text style={styles.greetingTitle}>{t('chat.hi')} {user?.name ?? t('chat.there')}! 👋</Text>
               <Text style={styles.greetingSubtitle}>{t('chat.greeting')}</Text>
             </View>
           </View>
@@ -234,7 +255,7 @@ export default function AIChatScreen() {
                           onPress={() => navigation.navigate(action.screen as any)}
                         >
                           <Icon size={14} color={colors.primary} strokeWidth={2.5} />
-                          <Text style={styles.actionBtnText}>{action.label}</Text>
+                          <Text style={styles.actionBtnText}>{t(action.label)}</Text>
                           <ChevronRight size={14} color={colors.primary} strokeWidth={2.5} />
                         </TouchableOpacity>
                       );

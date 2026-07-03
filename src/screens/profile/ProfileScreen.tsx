@@ -1,26 +1,32 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   Bell, Settings, ChevronRight, Crown, Utensils,
-  Target, CalendarDays, ShoppingCart, LogOut, Pencil,
-  Camera, Sparkles, MessageCircle, ChefHat, Zap, LogIn,
+  CalendarDays, ShoppingCart, LogOut, Pencil,
+  Camera, Sparkles, MessageCircle, ChefHat, Zap, LogIn, ShieldCheck,
+  Globe, Check, X,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
 import { useAuthStore } from '../../store/authStore';
+import { useUserStore } from '../../store/userStore';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { AiUsageToday } from '../../api/auth';
 import { RootStackParamList } from '../../navigation/types';
+import { LANGUAGES, LANG_NATIVE } from '../../constants/languages';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const FREE_LIMIT = 10;
-const CHAT_LIMIT = 50;
+const LIMITS = {
+  free:    { recipes: 3,  suggestions: 5,  scans: 3,  chat: 10, mealPlans: 1 },
+  premium: { recipes: 10, suggestions: 15, scans: 10, chat: 50, mealPlans: 3 },
+  pro:     { recipes: 25, suggestions: 30, scans: 20, chat: 100, mealPlans: 5 },
+};
 
 function getTimeUntilMidnight(): string {
   const now = new Date();
@@ -40,7 +46,9 @@ export default function ProfileScreen() {
   const { t } = useTranslation();
   const styles = makeStyles(colors);
 
+  const { language, setLanguage } = useUserStore();
   const [resetIn, setResetIn] = useState(getTimeUntilMidnight());
+  const [langSheetVisible, setLangSheetVisible] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setResetIn(getTimeUntilMidnight()), 1000);
@@ -52,10 +60,10 @@ export default function ProfileScreen() {
   }, [isAuthenticated]));
 
   const MENU_ITEMS = [
-    { label: t('profile.tastePreferences'), sub: 'Update your food preferences', icon: Utensils,      route: 'TastePreferences' as const, color: colors.quickScanIcon },
-    { label: t('profile.mealGoals'),        sub: 'Your goals and target settings', icon: Target,       route: 'MealGoals' as const,         color: colors.primary },
-    { label: 'Meal Plans',                  sub: 'Your weekly meal plans',          icon: CalendarDays, route: 'MealPlanner' as const,       color: colors.info },
-    { label: 'Shopping Lists',              sub: 'Your shopping lists',             icon: ShoppingCart, route: 'ShoppingList' as const,      color: colors.quickPlanIcon },
+    { label: t('profile.tastePreferences'), sub: t('profile.tastePreferencesSub'),  icon: Utensils,      route: 'TastePreferences' as const, color: colors.quickScanIcon },
+    { label: t('settings.language'),        sub: LANG_NATIVE[language] ?? language, icon: Globe,         route: null,                        color: colors.primary },
+    { label: t('profile.mealPlansMenu'),    sub: t('profile.mealPlansMenuSub'),         icon: CalendarDays,  route: 'MealPlanner' as const,      color: colors.info },
+    { label: t('profile.shoppingListsMenu'), sub: t('profile.shoppingListsMenuSub'),           icon: ShoppingCart,  route: 'ShoppingList' as const,     color: colors.quickPlanIcon },
   ];
 
   if (!isAuthenticated) {
@@ -68,9 +76,9 @@ export default function ProfileScreen() {
           <View style={styles.guestAvatar}>
             <Text style={styles.guestAvatarText}>?</Text>
           </View>
-          <Text style={styles.guestTitle}>You're browsing as a guest</Text>
+          <Text style={styles.guestTitle}>{t('profile.guestTitle')}</Text>
           <Text style={styles.guestSubtitle}>
-            Sign in to access your profile, saved recipes, meal plans, and personalized AI suggestions.
+            {t('profile.guestSubtitle')}
           </Text>
           <TouchableOpacity style={styles.signInBtn} activeOpacity={0.85} onPress={() => navigation.navigate('SignIn')}>
             <LogIn size={18} color={colors.textInverse} strokeWidth={2} />
@@ -86,12 +94,15 @@ export default function ProfileScreen() {
     suggestions_count: 0, ai_chat_count: 0,
   };
 
+  const isAdmin = user?.email === 'savorachef@gmail.com';
+  const tier    = user?.isPro ? LIMITS.pro : user?.isPremium ? LIMITS.premium : LIMITS.free;
+
   const aiUsageItems = [
-    { label: t('profile.recipes'),   value: usage.recipes_count,     max: FREE_LIMIT, icon: Utensils },
-    { label: t('profile.mealPlans'), value: usage.meal_plans_count,  max: FREE_LIMIT, icon: CalendarDays },
-    { label: t('profile.scans'),     value: usage.scans_count,       max: FREE_LIMIT, icon: Camera },
-    { label: 'Suggestions',          value: usage.suggestions_count, max: FREE_LIMIT, icon: Sparkles },
-    { label: t('profile.chats'),     value: usage.ai_chat_count,     max: CHAT_LIMIT, icon: MessageCircle },
+    { label: t('profile.recipes'),     value: usage.recipes_count,     max: tier.recipes,   icon: Utensils },
+    { label: t('profile.suggestions'), value: usage.suggestions_count, max: tier.suggestions, icon: Sparkles },
+    { label: t('profile.mealPlans'),   value: usage.meal_plans_count,  max: tier.mealPlans, icon: CalendarDays },
+    { label: t('profile.scans'),       value: usage.scans_count,       max: tier.scans,     icon: Camera },
+    { label: t('profile.chats'),       value: usage.ai_chat_count,     max: tier.chat,      icon: MessageCircle },
   ];
 
   const initial = user?.name?.[0]?.toUpperCase() ?? 'U';
@@ -130,9 +141,9 @@ export default function ProfileScreen() {
               <View style={styles.premiumBadgeRow}>
                 <View style={styles.premiumBadge}>
                   <Crown size={11} color={colors.warning} strokeWidth={2} />
-                  <Text style={styles.premiumBadgeText}>Premium</Text>
+                  <Text style={styles.premiumBadgeText}>{t('profile.premium')}</Text>
                 </View>
-                <Text style={styles.memberSince}>Member since {user.memberSince}</Text>
+                <Text style={styles.memberSince}>{t('profile.memberSincePrefix')} {user.memberSince}</Text>
               </View>
             )}
           </View>
@@ -146,17 +157,17 @@ export default function ProfileScreen() {
           <View style={styles.usageRow}>
             {aiUsageItems.map((item) => {
               const Icon = item.icon;
-              const pct = Math.min(item.value / item.max, 1);
-              const isNearLimit = pct >= 0.8;
+              const pct = isAdmin ? 0 : Math.min(item.value / item.max, 1);
+              const isNearLimit = !isAdmin && pct >= 0.8;
               return (
                 <View key={item.label} style={styles.usageItem}>
-                  <Icon size={20} color={isNearLimit ? colors.warning : colors.textSecondary} strokeWidth={2} />
+                  <Icon size={20} color={isAdmin ? colors.primary : isNearLimit ? colors.warning : colors.textSecondary} strokeWidth={2} />
                   <Text style={styles.usageLabel}>{item.label}</Text>
                   <Text style={[styles.usageCount, isNearLimit && styles.usageCountWarn]}>
-                    {item.value}/{item.max}
+                    {item.value}/{isAdmin ? '∞' : item.max}
                   </Text>
                   <View style={styles.usageBarBg}>
-                    <View style={[styles.usageBarFill, { width: `${Math.round(pct * 100)}%` as any, backgroundColor: isNearLimit ? colors.warning : colors.primary }]} />
+                    <View style={[styles.usageBarFill, { width: isAdmin ? '0%' : `${Math.round(pct * 100)}%` as any, backgroundColor: isNearLimit ? colors.warning : colors.primary }]} />
                   </View>
                 </View>
               );
@@ -172,17 +183,17 @@ export default function ProfileScreen() {
           <View style={styles.premiumBannerContent}>
             <View style={styles.premiumBannerTop}>
               <Crown size={18} color={colors.premiumGold} strokeWidth={2} />
-              <Text style={styles.premiumBannerTitle}>Savora Premium</Text>
+              <Text style={styles.premiumBannerTitle}>{t('premiumScreen.title')}</Text>
             </View>
             <Text style={styles.premiumBannerSub}>
-              Unlimited AI, advanced features{'\n'}and personalized nutrition.
+              {t('profile.premiumBannerSub')}
             </Text>
             <TouchableOpacity
               style={styles.managePlanBtn}
               onPress={() => navigation.navigate('ManagePlan')}
               activeOpacity={0.85}
             >
-              <Text style={styles.managePlanText}>Manage Plan</Text>
+              <Text style={styles.managePlanText}>{t('managePlan.title')}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.premiumDecor}>
@@ -210,7 +221,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 key={item.label}
                 style={[styles.menuItem, i === MENU_ITEMS.length - 1 && styles.menuItemLast]}
-                onPress={() => navigation.navigate(item.route as any)}
+                onPress={() => item.route ? navigation.navigate(item.route as any) : setLangSheetVisible(true)}
                 activeOpacity={0.7}
               >
                 <View style={[styles.menuIcon, { backgroundColor: item.color + '18' }]}>
@@ -225,6 +236,25 @@ export default function ProfileScreen() {
             );
           })}
         </View>
+
+        {user?.email === 'savorachef@gmail.com' && (
+          <View style={[styles.menu, { marginTop: Spacing.sm }]}>
+            <TouchableOpacity
+              style={[styles.menuItem, styles.menuItemLast]}
+              onPress={() => navigation.navigate('AdminPanel')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.menuIcon, { backgroundColor: '#7C3AED18' }]}>
+                <ShieldCheck size={18} color="#7C3AED" strokeWidth={2} />
+              </View>
+              <View style={styles.menuText}>
+                <Text style={styles.menuLabel}>{t('profile.adminPanel')}</Text>
+                <Text style={styles.menuSub}>{t('profile.adminPanelSub')}</Text>
+              </View>
+              <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={[styles.menu, { marginTop: Spacing.sm }]}>
           <TouchableOpacity
@@ -258,6 +288,35 @@ export default function ProfileScreen() {
 
         <View style={{ height: Spacing.xl }} />
       </ScrollView>
+
+      {/* ── Language Sheet ─────────────────────────────────────────────── */}
+      <Modal visible={langSheetVisible} transparent animationType="slide" onRequestClose={() => setLangSheetVisible(false)}>
+        <Pressable style={styles.sheetOverlay} onPress={() => setLangSheetVisible(false)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>{t('settings.selectLanguage')}</Text>
+              <TouchableOpacity onPress={() => setLangSheetVisible(false)} activeOpacity={0.7}>
+                <X size={20} color={colors.textMuted} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+            {LANGUAGES.map((lang) => (
+              <TouchableOpacity
+                key={lang}
+                style={[styles.optionRow, language === lang && styles.optionRowActive]}
+                onPress={() => { setLanguage(lang); setLangSheetVisible(false); }}
+                activeOpacity={0.75}
+              >
+                <View style={styles.optionInfo}>
+                  <Text style={styles.optionLabel}>{lang}</Text>
+                  <Text style={styles.optionDesc}>{LANG_NATIVE[lang]}</Text>
+                </View>
+                {language === lang && <Check size={18} color={colors.primary} strokeWidth={2.5} />}
+              </TouchableOpacity>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -311,8 +370,8 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   premiumBannerTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   premiumBannerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: c.textInverse },
   premiumBannerSub: { fontSize: FontSize.sm, color: 'rgba(255,255,255,0.75)', lineHeight: 20, marginTop: 2 },
-  managePlanBtn: { backgroundColor: c.background, alignSelf: 'flex-start', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, marginTop: Spacing.sm },
-  managePlanText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: c.premiumBg },
+  managePlanBtn: { backgroundColor: '#FFFFFF', alignSelf: 'flex-start', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, marginTop: Spacing.sm },
+  managePlanText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: '#0A2416' },
   premiumDecor: { width: 90, alignSelf: 'center', marginLeft: Spacing.sm, position: 'relative', alignItems: 'center', justifyContent: 'center', height: 110 },
   premiumDecorRing: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   premiumDecorBadge1: { position: 'absolute', top: 8, right: 4, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
@@ -328,4 +387,22 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   menuText: { flex: 1 },
   menuLabel: { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: c.text },
   menuSub: { fontSize: FontSize.xs, color: c.textMuted, marginTop: 1 },
+
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: c.background, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,
+    paddingHorizontal: Spacing.base, paddingBottom: Spacing.xl, paddingTop: Spacing.sm,
+  },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: c.border, marginBottom: Spacing.sm },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
+  sheetTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: c.text },
+  optionRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md, marginBottom: Spacing.xs,
+  },
+  optionRowActive: { backgroundColor: c.primarySurface },
+  optionInfo: { flex: 1 },
+  optionLabel: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: c.text },
+  optionDesc: { fontSize: FontSize.sm, color: c.textMuted, marginTop: 2 },
 });

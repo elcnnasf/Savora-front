@@ -14,38 +14,38 @@ import { RootStackParamList } from '../../navigation/types';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
+import { useCookingProgressStore } from '../../store/cookingProgressStore';
 
 type Route = RouteProp<RootStackParamList, 'CookingMode'>;
 const { width } = Dimensions.get('window');
 
-const AI_ANSWERS: { keywords: string[]; answer: string }[] = [
+const AI_ANSWERS: { keywords: string[]; answerKey: string }[] = [
   {
-    keywords: ['yanır', 'burn', 'yandı', 'smoke', 'tüstü', 'горит', 'yanıyor'],
-    answer: "If food is burning, immediately reduce heat to low and add 2–3 tablespoons of water or broth. Remove from heat momentarily if needed.",
+    keywords: ['yanır', 'burn', 'yandı', 'smoke', 'tüstü', 'горит', 'yanıyor', 'yanıyorsa', 'burning'],
+    answerKey: 'cooking.aiAnswerBurning',
   },
   {
-    keywords: ['səhv', 'wrong', 'mistake', 'redo', 'yenidən', 'hata', 'ошибка'],
-    answer: "Don't worry! For most steps, you can simply continue. If you overcooked or undercooked, adjust the next step's timing.",
+    keywords: ['səhv', 'wrong', 'mistake', 'redo', 'yenidən', 'hata', 'ошибка', 'hata yaptım'],
+    answerKey: 'cooking.aiAnswerMistake',
   },
   {
-    keywords: ['temperature', 'heat', 'istilik', 'temp', 'dərəcə', 'sıcaklık', 'температура'],
-    answer: "Medium-high heat is usually around 180–200°C on an oven or level 7–8 on a 10-level stovetop.",
+    keywords: ['temperature', 'heat', 'istilik', 'temp', 'dərəcə', 'sıcaklık', 'температура', 'ısı'],
+    answerKey: 'cooking.aiAnswerTemperature',
   },
   {
-    keywords: ['substitute', 'replace', 'əvəz', 'yoxdur', 'değişim', 'замена'],
-    answer: "Most ingredients have substitutes! Butter → olive oil, heavy cream → coconut milk, soy sauce → tamari.",
+    keywords: ['substitute', 'replace', 'əvəz', 'yoxdur', 'değişim', 'замена', 'alternatif'],
+    answerKey: 'cooking.aiAnswerSubstitute',
   },
   {
-    keywords: ['time', 'vaxt', 'süre', 'время', 'how long'],
-    answer: "Timing is a guide. Use visual cues: golden-brown colour, clear juices for meat, and fork-tender for vegetables.",
+    keywords: ['time', 'vaxt', 'süre', 'время', 'how long', 'ne kadar', 'neçə'],
+    answerKey: 'cooking.aiAnswerTime',
   },
 ];
 
-function getAIAnswer(question: string): string {
+function getAIAnswer(question: string, translate: (key: string) => string): string {
   const lower = question.toLowerCase();
   const match = AI_ANSWERS.find((a) => a.keywords.some((k) => lower.includes(k)));
-  return match?.answer ??
-    "Great question! Follow the step carefully and adjust based on what you see. If something looks or smells off, reduce heat and take it slow. You've got this!";
+  return match ? translate(match.answerKey) : translate('cooking.aiAnswerDefault');
 }
 
 export default function CookingModeScreen() {
@@ -59,6 +59,9 @@ export default function CookingModeScreen() {
   const steps      = route.params.steps ?? fallbackRecipe.steps;
   const recipeName = route.params.recipeName ?? fallbackRecipe.name;
   const recipe     = { name: recipeName, steps };
+
+  const recipeId = route.params.recipeId;
+  const { setProgress, clearProgress } = useCookingProgressStore();
 
   const [currentStep, setCurrentStep] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
@@ -75,6 +78,14 @@ export default function CookingModeScreen() {
   const step       = recipe.steps[currentStep];
   const totalSteps = recipe.steps.length;
   const progress   = (currentStep / totalSteps) * 100;
+
+  // Persist progress so "continue where you left off" works after logout/restart
+  useEffect(() => {
+    if (recipeId && totalSteps > 0) {
+      const pct = Math.round((currentStep / totalSteps) * 100);
+      if (pct > 0) setProgress(recipeId, pct);
+    }
+  }, [currentStep]);
 
   useEffect(() => {
     setSecondsLeft((step?.duration ?? 5) * 60);
@@ -97,8 +108,12 @@ export default function CookingModeScreen() {
   }, [timerActive]);
 
   function goNext() {
-    if (currentStep < totalSteps - 1) setCurrentStep((s) => s + 1);
-    else setCompleted(true);
+    if (currentStep < totalSteps - 1) {
+      setCurrentStep((s) => s + 1);
+    } else {
+      if (recipeId) clearProgress(recipeId);
+      setCompleted(true);
+    }
   }
 
   function goPrev() { if (currentStep > 0) setCurrentStep((s) => s - 1); }
@@ -109,7 +124,7 @@ export default function CookingModeScreen() {
     if (!aiQuestion.trim()) return;
     setAiLoading(true);
     setAiAnswer(null);
-    setTimeout(() => { setAiAnswer(getAIAnswer(aiQuestion)); setAiLoading(false); }, 1100);
+    setTimeout(() => { setAiAnswer(getAIAnswer(aiQuestion, t)); setAiLoading(false); }, 1100);
   }
 
   const minutes = Math.floor(secondsLeft / 60);

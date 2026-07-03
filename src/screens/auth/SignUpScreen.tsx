@@ -15,12 +15,14 @@ import { FontSize, FontWeight } from '../../constants/typography';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/authStore';
 import { AuthStackParamList } from '../../navigation/types';
+import { useTranslation } from '../../hooks/useTranslation';
 
 
 type Nav = NativeStackNavigationProp<AuthStackParamList>;
 
 export default function SignUpScreen() {
   const navigation = useNavigation<Nav>();
+  const { t } = useTranslation();
   const { signUp, signInWithGoogle } = useAuthStore();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -40,7 +42,7 @@ export default function SignUpScreen() {
       await signInWithGoogle(idToken);
     } catch (err: any) {
       if (err.code === statusCodes.SIGN_IN_CANCELLED) return;
-      Alert.alert('Google sign in failed', err?.message ?? 'Something went wrong.');
+      Alert.alert(t('auth.googleSignInFailed'), err?.message ?? t('common.error'));
     } finally {
       setGoogleLoading(false);
     }
@@ -48,19 +50,19 @@ export default function SignUpScreen() {
 
   async function handleSignUp() {
     if (!name || !email || !password) {
-      Alert.alert('Missing fields', 'Please fill in all fields.');
+      Alert.alert(t('auth.missingFields'), t('auth.missingFieldsSignUp'));
       return;
     }
     if (password.length < 8) {
-      Alert.alert('Weak password', 'Password must be at least 8 characters.');
+      Alert.alert(t('auth.weakPassword'), t('auth.weakPasswordLength'));
       return;
     }
     if (!/[A-Z]/.test(password)) {
-      Alert.alert('Weak password', 'Password must contain at least one uppercase letter.');
+      Alert.alert(t('auth.weakPassword'), t('auth.weakPasswordUppercase'));
       return;
     }
     if (!/[0-9]/.test(password)) {
-      Alert.alert('Weak password', 'Password must contain at least one number.');
+      Alert.alert(t('auth.weakPassword'), t('auth.weakPasswordNumber'));
       return;
     }
     setLoading(true);
@@ -70,7 +72,7 @@ export default function SignUpScreen() {
         navigation.navigate('VerifyEmail', { email });
       }
     } catch (err: any) {
-      Alert.alert('Sign up failed', err?.message ?? 'Something went wrong. Please try again.');
+      Alert.alert(t('auth.signUpFailed'), err?.message ?? t('auth.signUpFailedMsg'));
     } finally {
       setLoading(false);
     }
@@ -84,8 +86,8 @@ export default function SignUpScreen() {
             <ChevronLeft size={20} color={Colors.text} strokeWidth={2.5} />
           </TouchableOpacity>
 
-          <Text style={styles.heading}>Create account</Text>
-          <Text style={styles.subheading}>Join Savora and start cooking smarter</Text>
+          <Text style={styles.heading}>{t('auth.createAccount')}</Text>
+          <Text style={styles.subheading}>{t('auth.joinSavora')}</Text>
 
           <View style={styles.form}>
             <TouchableOpacity
@@ -101,34 +103,34 @@ export default function SignUpScreen() {
                 <Path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
               </Svg>
               <Text style={styles.googleBtnText}>
-                {googleLoading ? 'Signing in...' : 'Continue with Google'}
+                {googleLoading ? t('auth.signingIn') : t('auth.continueWithGoogle')}
               </Text>
             </TouchableOpacity>
 
             <View style={styles.dividerRow}>
               <View style={styles.divider} />
-              <Text style={styles.dividerText}>or sign up with email</Text>
+              <Text style={styles.dividerText}>{t('auth.orSignUpWithEmail')}</Text>
               <View style={styles.divider} />
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Full name</Text>
+              <Text style={styles.label}>{t('auth.fullName')}</Text>
               <TextInput
                 style={styles.input}
                 value={name}
                 onChangeText={setName}
-                placeholder="Your name"
+                placeholder={t('auth.namePlaceholder')}
                 placeholderTextColor={Colors.textMuted}
                 autoCapitalize="words"
               />
             </View>
             <View style={styles.field}>
-              <Text style={styles.label}>Email</Text>
+              <Text style={styles.label}>{t('auth.email')}</Text>
               <TextInput
                 style={styles.input}
                 value={email}
                 onChangeText={setEmail}
-                placeholder="you@example.com"
+                placeholder={t('auth.emailPlaceholder')}
                 placeholderTextColor={Colors.textMuted}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -136,13 +138,13 @@ export default function SignUpScreen() {
               />
             </View>
             <View style={styles.field}>
-              <Text style={styles.label}>Password</Text>
+              <Text style={styles.label}>{t('auth.password')}</Text>
               <View style={styles.passwordRow}>
                 <TextInput
                   style={[styles.input, styles.passwordInput]}
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="At least 8 characters"
+                  placeholder={t('auth.passwordMinPlaceholder')}
                   placeholderTextColor={Colors.textMuted}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
@@ -153,17 +155,17 @@ export default function SignUpScreen() {
               </View>
             </View>
 
-            <Button label="Create Account" onPress={handleSignUp} loading={loading} style={styles.btn} />
+            <Button label={t('auth.createAccount')} onPress={handleSignUp} loading={loading} style={styles.btn} />
 
             <Text style={styles.terms}>
-              By creating an account, you agree to our{' '}
-              <Text style={styles.link}>Terms of Service</Text> and{' '}
-              <Text style={styles.link}>Privacy Policy</Text>
+              {t('auth.termsPrefix')}{' '}
+              <Text style={styles.link}>{t('auth.termsLinkTos')}</Text> {t('auth.termsAnd')}{' '}
+              <Text style={styles.link}>{t('auth.termsLinkPrivacy')}</Text> {t('auth.termsSuffix')}
             </Text>
 
             <TouchableOpacity onPress={() => navigation.navigate('SignIn')} style={styles.signInRow}>
               <Text style={styles.signInText}>
-                Already have an account? <Text style={styles.signInLink}>Sign in</Text>
+                {t('auth.haveAccount')} <Text style={styles.signInLink}>{t('common.signIn')}</Text>
               </Text>
             </TouchableOpacity>
           </View>

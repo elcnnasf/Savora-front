@@ -13,7 +13,6 @@ import MealPlannerScreen from '../screens/planner/MealPlannerScreen';
 import ShoppingListScreen from '../screens/planner/ShoppingListScreen';
 import ScanScreen from '../screens/scan/ScanScreen';
 import TastePreferencesScreen from '../screens/profile/TastePreferencesScreen';
-import MealGoalsScreen from '../screens/profile/MealGoalsScreen';
 import MyProgressScreen from '../screens/profile/MyProgressScreen';
 import AchievementsScreen from '../screens/profile/AchievementsScreen';
 import SettingsScreen from '../screens/profile/SettingsScreen';
@@ -23,11 +22,14 @@ import ManagePlanScreen from '../screens/profile/ManagePlanScreen';
 import MatchedRecipesScreen from '../screens/scan/MatchedRecipesScreen';
 import SignInScreen from '../screens/auth/SignInScreen';
 import SignUpScreen from '../screens/auth/SignUpScreen';
+import AdminPanelScreen from '../screens/admin/AdminPanelScreen';
+import OnboardingScreen from '../screens/auth/OnboardingScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function AppNavigator() {
-  const { isAuthenticated, isGuest, isLoading, restoreSession } = useAuthStore();
+  const { isAuthenticated, isGuest, isLoading, hasSeenOnboarding, restoreSession } = useAuthStore();
   const { colors, isDark } = useTheme();
 
   useEffect(() => {
@@ -53,6 +55,10 @@ export default function AppNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
       {!showMain ? (
         <Stack.Screen name="Auth" component={AuthNavigator} />
+      ) : isAuthenticated && !hasSeenOnboarding ? (
+        // first login on this device without having finished the intro slides —
+        // show them once before entering the app
+        <Stack.Screen name="OnboardingIntro" component={OnboardingScreen} />
       ) : (
         <>
           <Stack.Screen name="Main" component={MainTabNavigator} />
@@ -89,11 +95,6 @@ export default function AppNavigator() {
           <Stack.Screen
             name="TastePreferences"
             component={TastePreferencesScreen}
-            options={{ animation: 'slide_from_right' }}
-          />
-          <Stack.Screen
-            name="MealGoals"
-            component={MealGoalsScreen}
             options={{ animation: 'slide_from_right' }}
           />
           <Stack.Screen
@@ -141,6 +142,16 @@ export default function AppNavigator() {
             name="SignUp"
             component={SignUpScreen}
             options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
+          />
+          <Stack.Screen
+            name="ForgotPassword"
+            component={ForgotPasswordScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="AdminPanel"
+            component={AdminPanelScreen}
+            options={{ animation: 'slide_from_right' }}
           />
         </>
       )}

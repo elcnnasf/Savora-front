@@ -24,9 +24,12 @@ export default function MainTabNavigator() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
+        // Keep the tab bar from floating above the keyboard (it would push the
+        // chat input out of view on Android)
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: isDark ? colors.surface : colors.card,
-          borderTopWidth: isDark ? 0 : 0,
+          borderTopWidth: 0,
           borderTopColor: colors.border,
           paddingTop: 8,
           shadowColor: '#000',

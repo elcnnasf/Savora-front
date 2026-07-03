@@ -1,9 +1,9 @@
 export const LightColors = {
   // Brand
-  primary: '#16A34A',
-  primaryLight: '#22C55E',
-  primarySurface: '#F0FDF4',
-  primaryDark: '#15803D',
+  primary: '#F97316',
+  primaryLight: '#FB923C',
+  primarySurface: '#FFF7ED',
+  primaryDark: '#EA580C',
 
   // Backgrounds
   background: '#FFFFFF',
@@ -66,56 +66,56 @@ export const LightColors = {
 } as const;
 
 export const DarkColors = {
-  // Brand — Apple green, easy on eyes in dark
-  primary: '#30D158',
-  primaryLight: '#4CD964',
-  primarySurface: '#0A2416',
-  primaryDark: '#22C55E',
+  // Brand
+  primary: '#F97316',
+  primaryLight: '#FB923C',
+  primarySurface: '#2C1200',
+  primaryDark: '#EA580C',
 
-  // Backgrounds — near-black with depth layers
-  background: '#0F0F10',
-  surface: '#1A1A1B',
-  card: '#1F1F20',
+  // Backgrounds
+  background: '#111111',
+  surface: '#1C1C1E',
+  card: '#1C1C1E',
 
-  // Borders — subtle, not harsh
-  border: '#2A2A2B',
-  borderLight: '#242425',
+  // Borders
+  border: '#2C2C2E',
+  borderLight: '#242424',
 
-  // Text — warm off-white, not stark white
-  text: '#EAEAEA',
-  textSecondary: '#8A8A8E',
-  textMuted: '#5A5A5E',
-  textInverse: '#0F0F10',
+  // Text
+  text: '#FFFFFF',
+  textSecondary: '#8E8E93',
+  textMuted: '#636366',
+  textInverse: '#FFFFFF',
 
   // Semantic
   success: '#30D158',
-  warning: '#FFD60A',
+  warning: '#D97706',
   error: '#FF453A',
-  info: '#0A84FF',
+  info: '#2563EB',
 
-  // Recipe tag colors (deep tones for dark)
-  tagHighProtein: '#0A2416',
+  // Recipe tag colors
+  tagHighProtein: '#052E16',
   tagHighProteinText: '#30D158',
   tagComfort: '#2C1800',
-  tagComfortText: '#FFD60A',
+  tagComfortText: '#FBBF24',
   tagHealthy: '#001C3D',
-  tagHealthyText: '#0A84FF',
+  tagHealthyText: '#60A5FA',
   tagVegan: '#1A0A2E',
   tagVeganText: '#BF5AF2',
   tagQuick: '#2C1800',
-  tagQuickText: '#FFD60A',
+  tagQuickText: '#FBBF24',
 
-  // Quick actions
-  quickScanBg: '#1A0F00',
-  quickScanIcon: '#FF9F0A',
-  quickRecipeBg: '#001833',
-  quickRecipeIcon: '#0A84FF',
-  quickPlanBg: '#120A24',
-  quickPlanIcon: '#BF5AF2',
+  // Quick action pill backgrounds
+  quickScanBg: '#FFF7ED',
+  quickScanIcon: '#EA580C',
+  quickRecipeBg: '#EFF6FF',
+  quickRecipeIcon: '#2563EB',
+  quickPlanBg: '#F5F3FF',
+  quickPlanIcon: '#7C3AED',
 
-  // Category colors
+  // Shopping list category colors
   catProduce: '#30D158',
-  catDairy: '#0A84FF',
+  catDairy: '#60A5FA',
   catMeat: '#FF453A',
   catPantry: '#BF5AF2',
 
@@ -132,7 +132,7 @@ export const DarkColors = {
   premiumBgLight: '#0F3620',
 } as const;
 
-// Backward-compat default export
 export const Colors = LightColors;
 
-export type AppColors = typeof LightColors;
+// Widen literal color values to string so light/dark palettes are interchangeable
+export type AppColors = { [K in keyof typeof LightColors]: string };

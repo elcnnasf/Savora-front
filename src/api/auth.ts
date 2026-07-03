@@ -13,6 +13,7 @@ export interface ApiUser {
   name: string;
   email?: string;
   is_premium: boolean;
+  is_pro: boolean;
   member_since?: string;
   avatar_url?: string;
   ai_usage_today?: AiUsageToday;
@@ -42,6 +43,22 @@ export function login(email: string, password: string) {
   });
 }
 
+export function forgotPassword(email: string) {
+  return apiFetch<{ success: boolean; message: string }>('/auth/forgot-password', {
+    method: 'POST',
+    body: { email },
+    auth: false,
+  });
+}
+
+export function resetPassword(email: string, token: string, newPassword: string) {
+  return apiFetch<{ success: boolean; message: string }>('/auth/reset-password', {
+    method: 'POST',
+    body: { email, token, new_password: newPassword },
+    auth: false,
+  });
+}
+
 export function register(name: string, email: string, password: string) {
   return apiFetch<{ success: boolean; data: RegisterPendingData }>('/auth/register', {
     method: 'POST',
@@ -64,4 +81,11 @@ export function googleSignIn(idToken: string) {
     body: { id_token: idToken },
     auth: false,
   });
+}
+
+export function subscribe(plan: 'premium' | 'pro' | 'free') {
+  return apiFetch<{ success: boolean; data: { plan: string; is_premium: boolean; is_pro: boolean } }>(
+    '/auth/subscribe',
+    { method: 'POST', body: { plan } },
+  );
 }

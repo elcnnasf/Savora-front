@@ -20,5 +20,16 @@ export function useTranslation() {
     return typeof value === 'string' ? value : key;
   }
 
-  return { t, lang };
+  function raw<T = any>(key: string): T {
+    const keys = key.split('.');
+    let value: any = TRANSLATIONS[lang];
+    for (const k of keys) value = value?.[k];
+    if (value === undefined || value === null) {
+      value = TRANSLATIONS.en;
+      for (const k of keys) value = value?.[k];
+    }
+    return value as T;
+  }
+
+  return { t, raw, lang };
 }

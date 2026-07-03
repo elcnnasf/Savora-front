@@ -11,6 +11,7 @@ import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
 import { RootStackParamList } from '../../navigation/types';
+import { useTranslation } from '../../hooks/useTranslation';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -21,15 +22,13 @@ interface GuestPromptProps {
   message?: string;
 }
 
-export function GuestPrompt({
-  visible,
-  onClose,
-  title = 'Sign in to continue',
-  message = 'Create a free account to access all features including AI recipes, meal planning, and saved dishes.',
-}: GuestPromptProps) {
+export function GuestPrompt({ visible, onClose, title, message }: GuestPromptProps) {
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
   const styles = makeStyles(colors);
+  const { t } = useTranslation();
+  const promptTitle = title ?? t('common.signInToContinue');
+  const promptMessage = message ?? t('common.guestPromptMessage');
 
   function goSignIn() {
     onClose();
@@ -61,20 +60,20 @@ export function GuestPrompt({
                 <Sparkles size={32} color={colors.primary} strokeWidth={1.5} />
               </View>
 
-              <Text style={styles.title}>{title}</Text>
-              <Text style={styles.message}>{message}</Text>
+              <Text style={styles.title}>{promptTitle}</Text>
+              <Text style={styles.message}>{promptMessage}</Text>
 
               <TouchableOpacity style={styles.primaryBtn} onPress={goSignIn} activeOpacity={0.85}>
                 <LogIn size={18} color={colors.textInverse} strokeWidth={2} />
-                <Text style={styles.primaryBtnText}>Sign In</Text>
+                <Text style={styles.primaryBtnText}>{t('common.signIn')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.outlineBtn} onPress={goSignUp} activeOpacity={0.85}>
                 <UserPlus size={18} color={colors.primary} strokeWidth={2} />
-                <Text style={styles.outlineBtnText}>Create Account</Text>
+                <Text style={styles.outlineBtnText}>{t('common.createAccount')}</Text>
               </TouchableOpacity>
 
-              <Text style={styles.freeNote}>Free forever · No credit card required</Text>
+              <Text style={styles.freeNote}>{t('common.freeForeverNote')}</Text>
             </View>
           </TouchableWithoutFeedback>
         </View>

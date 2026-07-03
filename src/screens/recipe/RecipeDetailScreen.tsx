@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Dimensions, Animated,
+  Dimensions, Animated, ActivityIndicator, Share,
 } from 'react-native';
 import { SafeImage } from '../../components/ui/SafeImage';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,12 +15,14 @@ import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
 import { RECIPES } from '../../data/mockData';
-import { RootStackParamList, ApiRecipe } from '../../navigation/types';
-import { useShoppingListStore } from '../../store/shoppingListStore';
+import { RootStackParamList, ApiRecipe, RecipeTranslation } from '../../navigation/types';
 import { useAuthStore } from '../../store/authStore';
+import { useUserStore } from '../../store/userStore';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
-import { saveRecipe, unsaveRecipe } from '../../api/recipes';
+import { saveRecipe, unsaveRecipe, getRecipeSavedStatus, fetchRecipeById, rateRecipe, getMyRating } from '../../api/recipes';
+import { add as addShoppingItem, addBulk as addBulkItems } from '../../services/shoppingListOffline';
+import { useRecentlyViewedStore } from '../../store/recentlyViewedStore';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'RecipeDetail'>;
@@ -39,61 +41,116 @@ interface DisplayRecipe {
   protein: number;
   carbs: number;
   fat: number;
+  fiber?: number;
+  sodium?: number;
+  estimated_cost?: number;
   cookTime: number;
   prepTime: number;
   servings: number;
-  rating: number;
+  ratingAvg: number | null;
+  ratingCount: number;
   tags: string[];
+  allergens?: string[];
   ingredients: { name: string; amount: string }[];
   steps: { step: number; instruction: string; duration?: number }[];
+  tips?: string[];
+  substitutions?: { ingredient: string; substitute: string; note?: string }[];
+  storage?: string;
   isAI: boolean;
+  isApi: boolean; // real DB recipe (ratable) vs bundled mock
   difficulty?: string;
   cuisine?: string;
 }
 
-function fromMock(r: typeof RECIPES[0]): DisplayRecipe {
+function langKeyFromName(language: string): string {
+  const map: Record<string, string> = {
+    'English': 'en',
+    'Azerbaijani': 'az',
+    'Russian': 'ru',
+    'Turkish': 'tr',
+  };
+  return map[language] ?? 'en';
+}
+
+function fromMock(r: typeof RECIPES[0], langKey: string): DisplayRecipe {
+  const trans = r.translations?.[langKey];
   return {
-    id: r.id, name: r.name, image: r.image,
+    id: r.id,
+    name: trans?.name ?? r.name,
+    image: r.image,
     calories: r.calories, protein: r.protein, carbs: 0, fat: 0,
     cookTime: r.cookTime, prepTime: 0, servings: r.servings,
-    rating: r.rating, tags: r.tags,
-    ingredients: r.ingredients, steps: r.steps, isAI: false,
+    ratingAvg: r.rating, ratingCount: 0, tags: r.tags,
+    ingredients: trans?.ingredients ?? r.ingredients,
+    steps: trans?.steps ?? r.steps,
+    isAI: false,
+    isApi: false,
   };
 }
 
-function fromApi(r: ApiRecipe): DisplayRecipe {
+function fromApi(r: ApiRecipe, langKey: string): DisplayRecipe {
+  const trans: RecipeTranslation | undefined = r.translations?.[langKey];
   return {
-    id: r.id, name: r.title,
-    image: r.image_url || FALLBACK_IMAGE,
-    description: r.description,
-    calories:  r.calories  ?? 0,
-    protein:   r.protein   ?? 0,
-    carbs:     r.carbs     ?? 0,
-    fat:       r.fat       ?? 0,
-    cookTime:  r.cook_time ?? 0,
-    prepTime:  r.prep_time ?? 0,
-    servings:  r.servings  ?? 2,
-    rating: 5.0,
-    tags: r.tags ?? [],
-    ingredients: r.ingredients,
-    steps: r.steps,
-    isAI: true,
+    id:             r.id,
+    name:           trans?.title        ?? r.title,
+    image:          r.image_url         || FALLBACK_IMAGE,
+    description:    trans?.description  ?? r.description,
+    calories:       r.calories          ?? 0,
+    protein:        r.protein           ?? 0,
+    carbs:          r.carbs             ?? 0,
+    fat:            r.fat               ?? 0,
+    fiber:          r.fiber             ?? undefined,
+    sodium:         r.sodium            ?? undefined,
+    estimated_cost: r.estimated_cost    ?? undefined,
+    cookTime:       r.cook_time         ?? 0,
+    prepTime:       r.prep_time         ?? 0,
+    servings:       r.servings          ?? 2,
+    ratingAvg:      r.rating_avg        ?? null,
+    ratingCount:    r.rating_count      ?? 0,
+    tags:           r.tags              ?? [],
+    allergens:      r.allergens         ?? [],
+    ingredients:    trans?.ingredients  ?? r.ingredients,
+    steps: (trans?.steps ?? r.steps).map((s) => {
+      // AI returns duration as string e.g. "10 min" — parse to number for timer compatibility
+      const rawDur = s.duration;
+      const durNum = typeof rawDur === 'string'
+        ? parseInt(rawDur.replace(/[^0-9]/g, ''), 10) || undefined
+        : rawDur ?? undefined;
+      return { step: s.step, instruction: s.instruction, duration: durNum };
+    }),
+    tips:           trans?.tips          ?? [],
+    substitutions:  trans?.substitutions ?? [],
+    storage:        trans?.storage       ?? undefined,
+    isAI:       r.is_ai_generated ?? false,
+    isApi:      true,
     difficulty: r.difficulty,
-    cuisine: r.cuisine,
+    cuisine:    r.cuisine,
   };
+}
+
+function categorizeIngredient(name: string): string {
+  const lower = name.toLowerCase();
+  const produce = ['spinach', 'tomato', 'avocado', 'lemon', 'lime', 'onion', 'garlic', 'cilantro', 'parsley', 'basil', 'broccoli', 'carrot', 'cucumber', 'pepper', 'lettuce', 'mushroom', 'zucchini', 'kale', 'potato', 'ginger', 'corn', 'peas', 'asparagus', 'eggplant', 'cabbage', 'banana', 'apple', 'orange'];
+  const dairy   = ['cheese', 'cream', 'butter', 'yogurt', 'milk', 'egg', 'parmesan', 'feta', 'mozzarella', 'cheddar'];
+  const meat    = ['chicken', 'beef', 'salmon', 'tuna', 'pork', 'turkey', 'shrimp', 'bacon', 'cod', 'fish', 'tofu', 'meat', 'lamb'];
+  if (produce.some((k) => lower.includes(k))) return 'Produce';
+  if (dairy.some((k) => lower.includes(k))) return 'Dairy & Eggs';
+  if (meat.some((k) => lower.includes(k))) return 'Meat & Fish';
+  return 'Pantry';
 }
 
 export default function RecipeDetailScreen() {
   const navigation  = useNavigation<Nav>();
   const route       = useRoute<Route>();
-  const addIngredient = useShoppingListStore((s) => s.addIngredient);
   const { isAuthenticated } = useAuthStore();
+  const { language } = useUserStore();
+  const addToRecentlyViewed = useRecentlyViewedStore((s) => s.addRecipe);
   const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = makeStyles(colors);
 
-  const TABS = [t('recipe.ingredients'), t('recipe.steps'), t('recipe.nutritionFacts'), 'Tips'] as const;
-  type Tab = string;
+  const TABS = [t('recipe.ingredients'), t('recipe.steps'), t('recipe.nutritionFacts'), t('recipe.tips')] as const;
+  type Tab = number;
 
   const TAG_COLORS: Record<string, { bg: string; text: string }> = {
     'High Protein': { bg: colors.tagHighProtein,  text: colors.tagHighProteinText },
@@ -103,24 +160,110 @@ export default function RecipeDetailScreen() {
     Quick:          { bg: colors.tagQuick,         text: colors.tagQuickText },
   };
 
-  const [activeTab, setActiveTab] = useState<Tab>(TABS[0]);
+  const [activeTab, setActiveTab] = useState<Tab>(0);
   const [servings,  setServings]  = useState(2);
   const [saved,     setSaved]     = useState(false);
   const [saving,    setSaving]    = useState(false);
+  const [myRating,  setMyRating]  = useState<number | null>(null);
+  const [ratingAgg, setRatingAgg] = useState<{ avg: number | null; count: number }>({ avg: null, count: 0 });
 
   const [toastMsg, setToastMsg] = useState('');
   const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastTimer   = useRef<ReturnType<typeof setTimeout>>();
+  const toastTimer   = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
-  const recipe: DisplayRecipe = (() => {
-    if (route.params.recipe) return fromApi(route.params.recipe);
-    const mock = RECIPES.find((r) => r.id === route.params.recipeId) ?? RECIPES[0];
-    return fromMock(mock);
-  })();
+  const langKey = useMemo(() => langKeyFromName(language), [language]);
 
-  useEffect(() => { setServings(recipe.servings); setActiveTab(TABS[0]); }, [recipe.id]);
+  // When only a DB recipeId is passed (e.g. from MatchedRecipes), fetch the recipe from the API
+  const [fetchedRecipe, setFetchedRecipe] = useState<ApiRecipe | null>(null);
+  const [fetchFailed, setFetchFailed] = useState(false);
+  useEffect(() => {
+    const id = route.params.recipeId;
+    if (route.params.recipe || !id || RECIPES.some((r) => r.id === id)) return;
+    setFetchFailed(false);
+    fetchRecipeById(id, langKey)
+      .then((res) => setFetchedRecipe(res.data))
+      .catch(() => setFetchFailed(true));
+  }, [route.params.recipe, route.params.recipeId, langKey]);
+
+  // Recipes are generated with only en + the creator's language; when this recipe
+  // lacks the app language, the backend translates it once on this fetch and the
+  // content swaps in when ready (English shows meanwhile via the existing fallback)
+  useEffect(() => {
+    const base = route.params.recipe;
+    // A title-only stub still needs the body translated — check steps, not presence
+    if (!base || langKey === 'en' || base.translations?.[langKey]?.steps?.length) return;
+    fetchRecipeById(base.id, langKey)
+      .then((res) => setFetchedRecipe(res.data))
+      .catch(() => {});
+  }, [route.params.recipe?.id, langKey]);
+
+  // A DB recipeId with nothing fetched yet — show a loader instead of flashing the wrong (mock) recipe
+  const isFetchingById =
+    !route.params.recipe &&
+    !!route.params.recipeId &&
+    !RECIPES.some((r) => r.id === route.params.recipeId) &&
+    !fetchedRecipe;
+
+  const recipe: DisplayRecipe = useMemo(() => {
+    // Prefer the fetched copy when it's the same recipe — it may carry a
+    // translation the route param doesn't have yet
+    const currentId = route.params.recipe?.id ?? route.params.recipeId;
+    if (fetchedRecipe && fetchedRecipe.id === currentId) return fromApi(fetchedRecipe, langKey);
+    if (route.params.recipe) return fromApi(route.params.recipe, langKey);
+    const mock = RECIPES.find((r) => r.id === route.params.recipeId) ?? RECIPES[0];
+    return fromMock(mock, langKey);
+  }, [route.params.recipe, route.params.recipeId, fetchedRecipe, langKey]);
+
+  useEffect(() => {
+    setServings(recipe.servings);
+    setActiveTab(0);
+  }, [recipe.id]);
+
+  // Track recently viewed
+  useEffect(() => {
+    if (route.params.recipe) addToRecentlyViewed(route.params.recipe);
+  }, [route.params.recipe?.id]);
+
+  // The store persists the recipe snapshot — refresh it once the translated
+  // copy arrives so Home's "recently viewed" isn't stuck in English
+  useEffect(() => {
+    if (fetchedRecipe && route.params.recipe && fetchedRecipe.id === route.params.recipe.id) {
+      addToRecentlyViewed(fetchedRecipe);
+    }
+  }, [fetchedRecipe]);
+
+  // Fetch saved status from backend for authenticated users
+  useEffect(() => {
+    if (!isAuthenticated || !recipe.isAI) return;
+    getRecipeSavedStatus(recipe.id)
+      .then((res) => setSaved(res.data.saved))
+      .catch(() => {});
+  }, [recipe.id, isAuthenticated]);
+
+  // Rating: aggregates come with the recipe; the user's own stars need a fetch
+  useEffect(() => {
+    setRatingAgg({ avg: recipe.ratingAvg, count: recipe.ratingCount });
+    setMyRating(null);
+    if (!isAuthenticated || !recipe.isApi) return;
+    getMyRating(recipe.id)
+      .then((res) => setMyRating(res.data.rating))
+      .catch(() => {});
+  }, [recipe.id, isAuthenticated]);
+
+  async function handleRate(star: number) {
+    if (!isAuthenticated) { navigation.navigate('SignIn'); return; }
+    const prev = myRating;
+    setMyRating(star); // optimistic
+    try {
+      const res = await rateRecipe(recipe.id, star);
+      setRatingAgg({ avg: res.data.rating_avg, count: res.data.rating_count });
+    } catch {
+      setMyRating(prev);
+      showToast(t('recipe.couldNotRate'));
+    }
+  }
 
   function showToast(msg: string) {
     setToastMsg(msg);
@@ -131,6 +274,33 @@ export default function RecipeDetailScreen() {
     }, 1800);
   }
 
+  async function handleShare() {
+    if (!recipe) return;
+    const totalTime = (recipe.prepTime ?? 0) + (recipe.cookTime ?? 0);
+    const lines = [
+      `🍽️ ${recipe.name}`,
+      ...(recipe.description ? ['', recipe.description] : []),
+      '',
+      `⏱️ ${totalTime} ${t('recipe.min')}  ·  👥 ${recipe.servings} ${t('recipe.servings')}${recipe.calories ? `  ·  🔥 ${recipe.calories} kcal` : ''}`,
+      '',
+      `${t('recipe.ingredients')}:`,
+      ...recipe.ingredients.map((i) => `• ${i.name}${i.amount ? ` — ${i.amount}` : ''}`),
+      '',
+      `${t('recipe.steps')}:`,
+      ...recipe.steps.map((s) => `${s.step}. ${s.instruction}`),
+      '',
+      '🧡 Savora',
+    ];
+    try {
+      await Share.share(
+        { message: lines.join('\n'), title: recipe.name },
+        { dialogTitle: t('recipe.shareRecipe') },
+      );
+    } catch {
+      // user dismissed the share sheet — nothing to do
+    }
+  }
+
   async function handleSaveToggle() {
     if (!isAuthenticated) { navigation.navigate('SignIn'); return; }
     if (saving) return;
@@ -139,22 +309,54 @@ export default function RecipeDetailScreen() {
       if (saved) {
         await unsaveRecipe(recipe.id);
         setSaved(false);
-        showToast('Removed from saved');
+        showToast(t('recipe.removedFromSaved'));
       } else {
         await saveRecipe(recipe.id);
         setSaved(true);
-        showToast('Saved to your collection');
+        showToast(t('recipe.savedToCollection'));
       }
     } catch (err: any) {
-      showToast(err?.message ?? 'Could not save recipe');
+      const msg: string = err?.message ?? '';
+      if (msg.includes('already')) {
+        setSaved(true);
+        showToast(t('recipe.alreadySaved'));
+      } else {
+        showToast(msg || t('recipe.couldNotSave'));
+      }
     } finally {
       setSaving(false);
     }
   }
 
-  function handleAddIngredient(name: string) {
-    const added = addIngredient(name);
-    showToast(added ? `"${name}" added to shopping list` : `"${name}" already in list`);
+  async function handleAddIngredient(name: string, amount?: string) {
+    if (!isAuthenticated) {
+      showToast(t('recipe.signInShoppingList'));
+      return;
+    }
+    try {
+      await addShoppingItem(name, amount, categorizeIngredient(name));
+      showToast(`"${name}" ${t('recipe.addedToShoppingList')}`);
+    } catch {
+      showToast(t('recipe.couldNotAddIngredients'));
+    }
+  }
+
+  async function handleAddAll() {
+    if (!isAuthenticated) {
+      showToast(t('recipe.signInShoppingList'));
+      return;
+    }
+    try {
+      const items = recipe.ingredients.map((ing) => ({
+        name:     ing.name,
+        quantity: ing.amount,
+        category: categorizeIngredient(ing.name),
+      }));
+      await addBulkItems(items);
+      showToast(t('recipe.allIngredientsAdded'));
+    } catch {
+      showToast(t('recipe.couldNotAddIngredients'));
+    }
   }
 
   const nutritionItems = [
@@ -162,14 +364,39 @@ export default function RecipeDetailScreen() {
     { label: t('recipe.protein'),  value: String(recipe.protein),  unit: 'g' },
     { label: t('recipe.carbs'),    value: String(recipe.carbs),    unit: 'g' },
     { label: t('recipe.fat'),      value: String(recipe.fat),      unit: 'g' },
+    ...(recipe.fiber  != null ? [{ label: 'Fiber',  value: String(recipe.fiber),  unit: 'g' }]  : []),
+    ...(recipe.sodium != null ? [{ label: 'Sodium', value: String(recipe.sodium), unit: 'mg' }] : []),
     { label: t('recipe.prepTime'), value: String(recipe.prepTime), unit: t('recipe.min') },
     { label: t('recipe.cookTime'), value: String(recipe.cookTime), unit: t('recipe.min') },
   ];
 
-  const isIngredientsTab = activeTab === TABS[0];
-  const isStepsTab       = activeTab === TABS[1];
-  const isNutritionTab   = activeTab === TABS[2];
-  const isTipsTab        = activeTab === TABS[3];
+  const isIngredientsTab = activeTab === 0;
+  const isStepsTab       = activeTab === 1;
+  const isNutritionTab   = activeTab === 2;
+  const isTipsTab        = activeTab === 3;
+
+  if (isFetchingById) {
+    return (
+      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center', gap: Spacing.md }]}>
+        {fetchFailed ? (
+          <>
+            <Text style={{ color: colors.textSecondary, fontSize: FontSize.base, textAlign: 'center', paddingHorizontal: Spacing.xl }}>
+              {t('matchedRecipes.loadFailed')}
+            </Text>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.8}
+              style={{ backgroundColor: colors.primary, borderRadius: BorderRadius.full, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.xl }}
+            >
+              <Text style={{ color: colors.textInverse, fontWeight: FontWeight.semibold }}>{t('common.back')}</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <ActivityIndicator size="large" color={colors.primary} />
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -186,7 +413,7 @@ export default function RecipeDetailScreen() {
               <ChevronLeft size={20} color="#111" strokeWidth={2.5} />
             </TouchableOpacity>
             <View style={styles.imageActions}>
-              <TouchableOpacity style={styles.circleBtn} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.circleBtn} onPress={handleShare} activeOpacity={0.8}>
                 <Share2 size={18} color="#111" strokeWidth={2} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.circleBtn} onPress={handleSaveToggle} activeOpacity={0.8} disabled={saving}>
@@ -221,10 +448,15 @@ export default function RecipeDetailScreen() {
         <View style={styles.content}>
           <View style={styles.titleRow}>
             <Text style={styles.title}>{recipe.name}</Text>
-            <View style={styles.ratingBadge}>
-              <Star size={13} color={colors.warning} fill={colors.warning} strokeWidth={0} />
-              <Text style={styles.ratingText}>{recipe.rating.toFixed(1)}</Text>
-            </View>
+            {(ratingAgg.avg != null || !recipe.isApi) && (
+              <View style={styles.ratingBadge}>
+                <Star size={13} color={colors.warning} fill={colors.warning} strokeWidth={0} />
+                <Text style={styles.ratingText}>
+                  {(ratingAgg.avg ?? recipe.ratingAvg ?? 0).toFixed(1)}
+                  {recipe.isApi && ratingAgg.count > 0 ? ` (${ratingAgg.count})` : ''}
+                </Text>
+              </View>
+            )}
           </View>
 
           {recipe.description ? (
@@ -271,16 +503,34 @@ export default function RecipeDetailScreen() {
             </View>
           </View>
 
+          {recipe.isApi && (
+            <View style={styles.rateRow}>
+              <Text style={styles.rateLabel}>{t('recipe.rateThis')}</Text>
+              <View style={styles.rateStars}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity key={star} onPress={() => handleRate(star)} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}>
+                    <Star
+                      size={26}
+                      color={colors.warning}
+                      fill={myRating != null && star <= myRating ? colors.warning : 'none'}
+                      strokeWidth={1.5}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
           <View style={styles.tabsContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-              {TABS.map((tab) => (
+              {TABS.map((tab, tabIdx) => (
                 <TouchableOpacity
                   key={tab}
-                  onPress={() => setActiveTab(tab)}
+                  onPress={() => setActiveTab(tabIdx)}
                   activeOpacity={0.75}
-                  style={[styles.tabPill, activeTab === tab && styles.tabPillActive]}
+                  style={[styles.tabPill, activeTab === tabIdx && styles.tabPillActive]}
                 >
-                  <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
+                  <Text style={[styles.tabText, activeTab === tabIdx && styles.tabTextActive]}>{tab}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -308,7 +558,7 @@ export default function RecipeDetailScreen() {
                   <Text style={styles.ingredientAmount} numberOfLines={1}>{ing.amount}</Text>
                   <TouchableOpacity
                     style={styles.addIngBtn}
-                    onPress={() => handleAddIngredient(ing.name)}
+                    onPress={() => handleAddIngredient(ing.name, ing.amount)}
                     activeOpacity={0.7}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
@@ -319,14 +569,11 @@ export default function RecipeDetailScreen() {
 
               <TouchableOpacity
                 style={styles.addAllBtn}
-                onPress={() => {
-                  recipe.ingredients.forEach((ing) => addIngredient(ing.name));
-                  showToast('All ingredients added to shopping list');
-                }}
+                onPress={handleAddAll}
                 activeOpacity={0.85}
               >
                 <ShoppingCart size={15} color={colors.primary} strokeWidth={2} />
-                <Text style={styles.addAllBtnText}>Add all to Shopping List</Text>
+                <Text style={styles.addAllBtnText}>{t('recipe.addAllToShoppingList')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -364,30 +611,69 @@ export default function RecipeDetailScreen() {
                   </View>
                 ))}
               </View>
-              <Text style={styles.nutritionNote}>* {t('recipe.perServing')} · Values are estimated</Text>
+              <Text style={styles.nutritionNote}>* {t('recipe.perServing')} · {t('recipe.valuesEstimated')}</Text>
             </View>
           )}
 
           {isTipsTab && (
             <View style={styles.section}>
-              {[
+              {/* AI-generated tips */}
+              {(recipe.tips && recipe.tips.length > 0 ? recipe.tips : [
                 recipe.cuisine
-                  ? `This is a ${recipe.cuisine} dish — try serving it with traditional sides for an authentic experience.`
-                  : 'Taste as you cook and adjust seasoning to your preference.',
-                `This recipe makes ${recipe.servings} servings. Scale ingredients proportionally for more or fewer portions.`,
-                recipe.difficulty === 'easy'
-                  ? "This is a beginner-friendly recipe. Follow each step carefully and you'll get great results."
-                  : 'Take your time with each step — rushing leads to uneven cooking.',
-                'Prep all ingredients before you start cooking (mise en place) for a smoother experience.',
-                'Let meat rest for a few minutes after cooking to retain its juices.',
-              ].map((tip, i) => (
-                <View key={i} style={styles.tipCard}>
+                  ? t('recipe.tipCuisine').replace('{cuisine}', recipe.cuisine)
+                  : t('recipe.tipTaste'),
+                t('recipe.tipPrep'),
+                recipe.difficulty === 'easy' ? t('recipe.tipEasy') : t('recipe.tipSlow'),
+              ]).map((tip, i) => (
+                <View key={`tip-${i}`} style={styles.tipCard}>
                   <View style={styles.tipIcon}>
                     <Text style={styles.tipIconText}>💡</Text>
                   </View>
                   <Text style={styles.tipText}>{tip}</Text>
                 </View>
               ))}
+
+              {/* Substitutions */}
+              {recipe.substitutions && recipe.substitutions.length > 0 && (
+                <>
+                  <Text style={styles.tipsSubHeader}>{t('recipe.substitutions')}</Text>
+                  {recipe.substitutions.map((sub, i) => (
+                    <View key={`sub-${i}`} style={styles.subCard}>
+                      <View style={styles.subRow}>
+                        <Text style={styles.subFrom}>{sub.ingredient}</Text>
+                        <Text style={styles.subArrow}>→</Text>
+                        <Text style={styles.subTo}>{sub.substitute}</Text>
+                      </View>
+                      {sub.note ? <Text style={styles.subNote}>{sub.note}</Text> : null}
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {/* Storage */}
+              {recipe.storage ? (
+                <>
+                  <Text style={styles.tipsSubHeader}>{t('recipe.storage')}</Text>
+                  <View style={styles.storageCard}>
+                    <Text style={styles.tipIconText}>🧊</Text>
+                    <Text style={styles.tipText}>{recipe.storage}</Text>
+                  </View>
+                </>
+              ) : null}
+
+              {/* Allergens */}
+              {recipe.allergens && recipe.allergens.length > 0 && (
+                <>
+                  <Text style={styles.tipsSubHeader}>{t('recipe.allergens')}</Text>
+                  <View style={styles.allergensRow}>
+                    {recipe.allergens.map((a) => (
+                      <View key={a} style={styles.allergenChip}>
+                        <Text style={styles.allergenText}>{a}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
             </View>
           )}
 
@@ -420,7 +706,7 @@ export default function RecipeDetailScreen() {
 const makeStyles = (c: AppColors) => StyleSheet.create({
   container:    { flex: 1, backgroundColor: c.background },
   heroImage:    { width, height: IMG_HEIGHT },
-  imageOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.18)' },
+  imageOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.18)' },
   imageHeader:  {
     position: 'absolute', top: 0, left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -470,6 +756,14 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   statDivider:  { width: 1, height: 30, backgroundColor: c.border },
   statValue:    { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: c.text, textAlign: 'center' },
   statLabel:    { fontSize: FontSize.xs, color: c.textMuted, textAlign: 'center' },
+  rateRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: c.surface, borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+    borderWidth: 1, borderColor: c.border, marginBottom: Spacing.base,
+  },
+  rateLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: c.textSecondary, flexShrink: 1, marginRight: Spacing.sm },
+  rateStars: { flexDirection: 'row', gap: 4 },
   tabsContainer: { marginBottom: Spacing.base },
   tabs:          { gap: Spacing.sm },
   tabPill:       {
@@ -547,6 +841,31 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   tipIcon:       { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   tipIconText:   { fontSize: 18 },
   tipText:       { flex: 1, fontSize: FontSize.base, color: c.text, lineHeight: FontSize.base * 1.5 },
+  tipsSubHeader: {
+    fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: c.textSecondary,
+    textTransform: 'uppercase', letterSpacing: 0.5, marginTop: Spacing.sm,
+  },
+  subCard: {
+    backgroundColor: c.surface, borderRadius: BorderRadius.lg, padding: Spacing.md,
+    gap: 4, borderLeftWidth: 3, borderLeftColor: c.primary,
+  },
+  subRow:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  subFrom: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: c.text },
+  subArrow: { fontSize: FontSize.base, color: c.textMuted },
+  subTo:   { fontSize: FontSize.base, color: c.primary, fontWeight: FontWeight.semibold, flex: 1 },
+  subNote: { fontSize: FontSize.sm, color: c.textSecondary, fontStyle: 'italic' },
+  storageCard: {
+    flexDirection: 'row', gap: Spacing.md,
+    backgroundColor: c.surface, borderRadius: BorderRadius.lg, padding: Spacing.md,
+    alignItems: 'flex-start',
+  },
+  allergensRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  allergenChip:  {
+    backgroundColor: '#FEF3C7', borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.md, paddingVertical: 4,
+    borderWidth: 1, borderColor: '#F59E0B',
+  },
+  allergenText:  { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: '#92400E' },
   bottomBar:     {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: c.background, borderTopWidth: 1, borderTopColor: c.border,

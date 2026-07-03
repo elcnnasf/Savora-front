@@ -16,6 +16,7 @@ import { generateRecipe } from '../../api/ai';
 import { useUserStore } from '../../store/userStore';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
+import { localizeRecipe } from '../../utils/recipeLocale';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'MatchedRecipes'>;
@@ -36,7 +37,7 @@ export default function MatchedRecipesScreen() {
   const { ingredients } = route.params;
   const { preferences, language } = useUserStore();
   const { colors } = useTheme();
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const dynStyles = makeStyles(colors);
 
   const [recipes, setRecipes]     = useState<MatchedRecipe[]>([]);
@@ -55,7 +56,7 @@ export default function MatchedRecipesScreen() {
       const res = await matchRecipes(ingredients);
       setRecipes(res.data ?? []);
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to load matches.');
+      setError(err?.message ?? t('matchedRecipes.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -99,11 +100,11 @@ export default function MatchedRecipesScreen() {
         <View style={dynStyles.cardTop}>
           <MatchBadge percent={item.match_percent} />
           <Text style={dynStyles.matchCount} numberOfLines={1}>
-            {item.matched_count}/{item.total_count} ingredients
+            {item.matched_count}/{item.total_count} {t('matchedRecipes.ingredientsWord')}
           </Text>
         </View>
 
-        <Text style={dynStyles.cardTitle} numberOfLines={2}>{item.title}</Text>
+        <Text style={dynStyles.cardTitle} numberOfLines={2}>{localizeRecipe(item, lang).title}</Text>
 
         <View style={dynStyles.cardMeta}>
           {item.cook_time != null && (

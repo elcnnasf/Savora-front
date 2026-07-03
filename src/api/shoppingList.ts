@@ -34,3 +34,9 @@ export const deleteItem = (id: string) =>
 
 export const clearChecked = () =>
   apiFetch('/shopping-list/checked', { method: 'DELETE' });
+
+export const addBulkItems = (items: { name: string; quantity?: string; category?: string }[]) =>
+  apiFetch<{ success: boolean; data: ShoppingItem[] }>('/shopping-list/items/bulk', {
+    method: 'POST',
+    body: { items },
+  });
