@@ -1,28 +1,28 @@
-# Monorepo root — applies to both savora/ and savora-backend/
-
 # dependencies
-**/node_modules/
+node_modules/
 
-# secrets & env (NEVER commit real .env — examples are fine)
-**/.env
-**/.env.*
-!**/.env.example
+# secrets & env
+.env
+.env.*
+!.env.example
 *.keystore
 *.jks
-**/google-services.json
-**/GoogleService-Info.plist
+google-services.json
+GoogleService-Info.plist
+android/app/google-services.json
 
-# build / tooling output
-**/.expo/
-**/dist/
-**/web-build/
-**/.vs/
+# expo / build output
+.expo/
+dist/
+web-build/
 *.tsbuildinfo
 
 # native
-savora/ios/
-**/.gradle/
-**/build/
+ios/
+android/.gradle/
+android/build/
+android/app/build/
+*.orig.*
 
 # misc
 .DS_Store
