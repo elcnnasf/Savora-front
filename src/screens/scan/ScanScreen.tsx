@@ -8,6 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import {
   X, Camera, Image as ImageIcon, Sparkles, RotateCcw,
   Zap, ZapOff, ChevronRight, RefreshCw, Plus, PenLine,
@@ -43,20 +44,40 @@ export default function ScanScreen() {
   const [scanError, setScanError]     = useState<string | null>(null);
   const [manualInput, setManualInput] = useState('');
 
-  // Reject oversized images before they hit the AI endpoint — a huge payload
-  // wastes bandwidth and model cost. base64 inflates bytes ~4/3, so ~6.5MB of
-  // base64 ≈ a ~5MB image, plenty for ingredient detection.
+  // Safety net only — after client-side downscaling payloads are ~200KB
   const MAX_BASE64_LEN = 6_500_000;
 
-  const doScan = useCallback(async (base64: string) => {
-    if (base64.length > MAX_BASE64_LEN) {
-      setScanError(t('scan.imageTooLarge'));
-      setPhase('result');
-      return;
+  // Phone cameras produce 3-12MB photos; uploading those made scans slow and
+  // often trip the size limit. Downscale to 1280px / 70% JPEG (~150-400KB)
+  // before upload — plenty of detail for ingredient detection.
+  async function toScanBase64(uri: string): Promise<string | null> {
+    try {
+      const out = await manipulateAsync(
+        uri,
+        [{ resize: { width: 1280 } }],
+        { compress: 0.7, format: SaveFormat.JPEG, base64: true },
+      );
+      return out.base64 ?? null;
+    } catch {
+      return null;
     }
+  }
+
+  const doScan = useCallback(async (uri: string) => {
     setPhase('scanning');
     setScanError(null);
     try {
+      const base64 = await toScanBase64(uri);
+      if (!base64) {
+        setScanError(t('errors.couldNotReadImage'));
+        setPhase('result');
+        return;
+      }
+      if (base64.length > MAX_BASE64_LEN) {
+        setScanError(t('scan.imageTooLarge'));
+        setPhase('result');
+        return;
+      }
       const res = await scanIngredients(base64);
       const found = res.data.ingredients;
       if (found.length === 0) {
@@ -76,13 +97,12 @@ export default function ScanScreen() {
     if (!cameraRef.current) return;
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.6,
-        base64: true,
+        quality: 0.8,
         exif: false,
       });
-      if (!photo?.base64) { Alert.alert(t('errors.title'), t('errors.couldNotCapturePhoto')); return; }
+      if (!photo?.uri) { Alert.alert(t('errors.title'), t('errors.couldNotCapturePhoto')); return; }
       setPreviewUri(photo.uri);
-      await doScan(photo.base64);
+      await doScan(photo.uri);
     } catch {
       Alert.alert(t('errors.title'), t('errors.failedToTakePhoto'));
     }
@@ -96,16 +116,14 @@ export default function ScanScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.6,
-      base64: true,
+      quality: 0.8,
       allowsEditing: true,
       aspect: [4, 3],
     });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
-    if (!asset.base64) { Alert.alert(t('errors.title'), t('errors.couldNotReadImage')); return; }
     setPreviewUri(asset.uri);
-    await doScan(asset.base64);
+    await doScan(asset.uri);
   }
 
   function reset() {
