@@ -17,7 +17,7 @@ import { FontSize, FontWeight } from '../../constants/typography';
 import { Header } from '../../components/ui/Header';
 import { Button } from '../../components/ui/Button';
 import { Chip } from '../../components/ui/Chip';
-import { generateRecipe, suggestRecipes, RecipeSuggestion } from '../../api/ai';
+import { generateRecipe, suggestRecipes, RecipeSuggestion, buildAiPreferences } from '../../api/ai';
 import { RootStackParamList } from '../../navigation/types';
 import { useUserStore } from '../../store/userStore';
 import { useTheme } from '../../hooks/useTheme';
@@ -119,7 +119,7 @@ export default function AIRecipeScreen() {
       const res = await generateRecipe({
         ingredients: scannedIngredients,
         language,
-        preferences: { dietary_restrictions, cuisine: preferences.cuisines[0] ?? undefined, max_cook_time: maxTime, servings },
+        preferences: { ...buildAiPreferences(preferences), dietary_restrictions, max_cook_time: maxTime, servings },
       });
       navigation.replace('RecipeDetail', { recipe: res.data });
     } catch (err: any) {
@@ -137,7 +137,13 @@ export default function AIRecipeScreen() {
       const res = await generateRecipe({
         description: nameForGen,
         language,
-        preferences: { dietary_restrictions, cuisine: (selected.cuisine || preferences.cuisines[0]) ?? undefined, max_cook_time: maxTime, servings },
+        preferences: {
+          ...buildAiPreferences(preferences),
+          dietary_restrictions,
+          cuisine: (selected.cuisine || preferences.cuisines[0]) ?? undefined,
+          max_cook_time: maxTime,
+          servings,
+        },
       });
       navigation.replace('RecipeDetail', { recipe: res.data });
     } catch (err: any) {

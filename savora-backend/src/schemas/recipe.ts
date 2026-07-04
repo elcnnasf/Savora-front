@@ -20,11 +20,17 @@ export const generateRecipeSchema = z.object({
     .optional(),
   preferences: z
     .object({
-      dietary_restrictions: z.array(z.string()).optional(),
-      cuisine:              z.string().optional(),
-      max_cook_time:        z.number().positive().optional(),
-      servings:             z.number().min(1).max(10).optional(),
-      difficulty:           z.enum(['easy', 'medium', 'hard']).optional(),
+      dietary_restrictions:  z.array(z.string()).optional(),
+      cuisine:               z.string().optional(),
+      max_cook_time:         z.number().positive().optional(),
+      servings:              z.number().min(1).max(10).optional(),
+      difficulty:            z.enum(['easy', 'medium', 'hard']).optional(),
+      allergies:             z.array(z.string().max(50)).max(20).optional(),
+      disliked_ingredients:  z.array(z.string().max(50)).max(30).optional(),
+      spice_level:           z.string().max(20).optional(),
+      favorite_proteins:     z.array(z.string().max(30)).max(10).optional(),
+      health_goal:           z.string().max(40).optional(),
+      max_calories_per_meal: z.number().min(100).max(3000).optional(),
     })
     .optional(),
   language: z.string().max(20).optional(),

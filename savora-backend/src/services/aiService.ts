@@ -533,6 +533,28 @@ export async function generateRecipe(
   const servings     = preferences?.servings || 2;
   const difficulty   = preferences?.difficulty || 'easy';
 
+  // Extra taste-profile constraints from the user's saved preferences
+  const prefLines = [
+    preferences?.allergies?.length
+      ? `- ALLERGIES (STRICT — the recipe MUST NOT contain these in any form): ${preferences.allergies.join(', ')}`
+      : '',
+    preferences?.disliked_ingredients?.length
+      ? `- Disliked ingredients (avoid; if essential to the dish, offer a substitution): ${preferences.disliked_ingredients.join(', ')}`
+      : '',
+    preferences?.spice_level
+      ? `- Spice level: ${preferences.spice_level} (adjust chili/pepper amounts accordingly)`
+      : '',
+    preferences?.favorite_proteins?.length
+      ? `- Preferred proteins (favor when a choice exists): ${preferences.favorite_proteins.join(', ')}`
+      : '',
+    preferences?.health_goal
+      ? `- Health goal: ${preferences.health_goal} (tune portions and macros toward it)`
+      : '',
+    preferences?.max_calories_per_meal
+      ? `- Keep calories per serving under ~${preferences.max_calories_per_meal} kcal if realistically possible`
+      : '',
+  ].filter(Boolean).join('\n');
+
   // Full content only for English + the requesting user's language (cuts output ~3x);
   // every other language gets a title-only stub so lists and search work in all
   // languages immediately — bodies are translated lazily on first view
@@ -580,7 +602,7 @@ Additional requirements:
 - Dietary restrictions: ${restrictions}
 - Max cooking time: ${maxTime} minutes
 - Servings: ${servings}
-
+${prefLines ? prefLines + '\n' : ''}
 Rules:
 - NEVER substitute a different dish — if user asked for X, give X
 - Use the proper culinary name (e.g. "piti" → "Piti (Azerbaijani Clay Pot Soup)", "qrənki" → "Azerbaijani Beer Mezesi (Qrənki)")
@@ -627,7 +649,7 @@ Requirements:
 - Dietary restrictions: ${restrictions}
 - Max cooking time: ${maxTime} minutes
 - Servings: ${servings}
-- Use the proper culinary name
+${prefLines ? prefLines + '\n' : ''}- Use the proper culinary name
 - Minimum 6 detailed steps — each with technique, visual cue, and realistic duration
 - Include practical cooking tips and ingredient substitutions
 - difficulty must be exactly "easy", "medium", or "hard" (lowercase only)
@@ -895,6 +917,25 @@ export async function generateMealPlan(
     : budget === 'premium' ? 'high-quality and premium ingredients'
     : 'moderately priced ingredients';
 
+  const allergies   = input.allergies;
+  const dislikedIng = input.disliked_ingredients;
+  const favProteins = input.favorite_proteins;
+  const mealsPerDay = input.meals_per_day;
+  const healthGoal  = input.health_goal;
+
+  const extraPrefLines = [
+    allergies?.length   ? `\n- ALLERGIES (STRICT — no meal may contain these in any form): ${allergies.join(', ')}` : '',
+    dislikedIng?.length ? `\n- Disliked ingredients (avoid across the whole plan): ${dislikedIng.join(', ')}` : '',
+    favProteins?.length ? `\n- Preferred proteins (feature these often): ${favProteins.join(', ')}` : '',
+    healthGoal          ? `\n- Health goal: ${healthGoal} (tune meal choices and macros toward it)` : '',
+  ].join('');
+
+  const mealsLine = mealsPerDay && mealsPerDay >= 4
+    ? `- Include breakfast, lunch, dinner and ${mealsPerDay - 3 > 1 ? `${mealsPerDay - 3} snacks` : 'a snack'} for each day (${mealsPerDay} meals/day)`
+    : mealsPerDay === 2
+    ? '- Include lunch and dinner for each day (2 meals/day)'
+    : '- Include breakfast, lunch, and dinner for each day';
+
   const prompt = `You are a professional nutritionist and meal planner AI. Generate a complete 7-day meal plan.
 
 REQUIREMENTS:
@@ -903,8 +944,8 @@ REQUIREMENTS:
 - Daily calorie goal: ~${calorieGoal} kcal total (spread across meals)
 - Dietary preferences: ${dietary}
 - Spice level preference: ${spice}
-- Cuisine preference: ${cuisinePref}
-- Include breakfast, lunch, and dinner for each day
+- Cuisine preference: ${cuisinePref}${extraPrefLines}
+${mealsLine}
 - Vary the meals so there's no repetition across the week
 - Calories should be realistic and sum close to ${calorieGoal} per day${mealLangNote}${futureDaysNote}
 

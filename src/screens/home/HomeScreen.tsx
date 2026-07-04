@@ -24,6 +24,8 @@ import { getGreetingKey } from '../../utils/date';
 import { RootStackParamList, ApiRecipe } from '../../navigation/types';
 import { fetchRecipes } from '../../api/recipes';
 import { localizeRecipe, localizeRecipes } from '../../utils/recipeLocale';
+import { useUserStore } from '../../store/userStore';
+import { rankByPreferences } from '../../utils/preferenceScore';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width } = Dimensions.get('window');
@@ -34,6 +36,7 @@ export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const { user, isAuthenticated } = useAuthStore();
   const recentlyViewed = useRecentlyViewedStore((s) => s.recipes);
+  const preferences = useUserStore((s) => s.preferences);
   const cookingProgress = useCookingProgressStore((s) => s.progress);
   const { colors } = useTheme();
   const { t, lang } = useTranslation();
@@ -43,13 +46,14 @@ export default function HomeScreen() {
   const [loadingRecs, setLoadingRecs] = useState(true);
 
   // Refetch on every focus (not just mount) so titles pick up translations
-  // added while the user was viewing a recipe
+  // added while the user was viewing a recipe. Fetch a wide pool, then rank
+  // by Taste Preferences so "Today's recommendation" actually fits the user.
   useFocusEffect(useCallback(() => {
-    fetchRecipes({ limit: 6 })
-      .then((res) => setRecommendations(res.data.items))
+    fetchRecipes({ limit: 30 })
+      .then((res) => setRecommendations(rankByPreferences(res.data.items, preferences)))
       .catch(() => {})
       .finally(() => setLoadingRecs(false));
-  }, []));
+  }, [preferences]));
 
   const featured: ApiRecipe | null = useMemo(
     () => (recommendations[0] ? localizeRecipe(recommendations[0], lang) : null),

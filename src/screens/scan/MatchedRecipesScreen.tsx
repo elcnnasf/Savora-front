@@ -12,7 +12,9 @@ import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
 import { RootStackParamList } from '../../navigation/types';
 import { matchRecipes, MatchedRecipe } from '../../api/recipes';
-import { generateRecipe } from '../../api/ai';
+import { generateRecipe, buildAiPreferences } from '../../api/ai';
+import { ApiRecipe } from '../../navigation/types';
+import { preferenceScore, violatesHardRules } from '../../utils/preferenceScore';
 import { useUserStore } from '../../store/userStore';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
@@ -54,7 +56,19 @@ export default function MatchedRecipesScreen() {
     setError(null);
     try {
       const res = await matchRecipes(ingredients);
-      setRecipes(res.data ?? []);
+      // Rank by ingredient match AND taste preferences; recipes that hit an
+      // allergy / disliked ingredient sink to the bottom instead of hiding —
+      // the user did scan these ingredients, so we still show everything.
+      const ranked = [...(res.data ?? [])].sort((a, b) => {
+        const combined = (r: MatchedRecipe) => {
+          const rec = r as unknown as ApiRecipe;
+          return r.match_percent
+            + preferenceScore(rec, preferences) * 0.5
+            + (violatesHardRules(rec, preferences) ? -1000 : 0);
+        };
+        return combined(b) - combined(a);
+      });
+      setRecipes(ranked);
     } catch (err: any) {
       setError(err?.message ?? t('matchedRecipes.loadFailed'));
     } finally {
@@ -68,11 +82,7 @@ export default function MatchedRecipesScreen() {
       const res = await generateRecipe({
         ingredients,
         language,
-        preferences: {
-          dietary_restrictions: preferences.dietary.length > 0 ? preferences.dietary : undefined,
-          cuisine:              preferences.cuisines[0] ?? undefined,
-          servings:             preferences.servingSize ?? 2,
-        },
+        preferences: buildAiPreferences(preferences),
       });
       navigation.replace('RecipeDetail', { recipe: res.data });
     } catch (err: any) {

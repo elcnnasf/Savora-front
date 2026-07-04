@@ -152,15 +152,20 @@ export default function MealPlannerScreen() {
     try {
       const calNum = parseInt(aiCalories, 10);
       await generateMealPlan({
-        week_start:          weekStart,
-        location:            aiLocation || 'International',
-        budget:              aiBudget,
-        calorie_goal:        isNaN(calNum) ? mealGoals.calories : calNum,
-        dietary_preferences: aiDietary,
-        spice_level:         preferences.spiceLevel,
-        cuisine_preference:  preferences.cuisines.join(', '),
+        week_start:           weekStart,
+        location:             aiLocation || 'International',
+        budget:               aiBudget,
+        calorie_goal:         isNaN(calNum) ? mealGoals.calories : calNum,
+        dietary_preferences:  aiDietary,
+        spice_level:          preferences.spiceLevel,
+        cuisine_preference:   preferences.cuisines.join(', '),
+        allergies:            preferences.allergies?.length ? preferences.allergies : undefined,
+        disliked_ingredients: preferences.dislikedIngredients?.length ? preferences.dislikedIngredients : undefined,
+        favorite_proteins:    preferences.favoriteProteins?.length ? preferences.favoriteProteins : undefined,
+        meals_per_day:        preferences.mealFrequency ?? undefined,
+        health_goal:          preferences.healthGoal && preferences.healthGoal !== 'No Goal' ? preferences.healthGoal : undefined,
         language,
-        today_day_index:     todayIdx,
+        today_day_index:      todayIdx,
       } as any);
       setAiModalVisible(false);
       await loadPlan();

@@ -21,6 +21,10 @@ export interface UserPreferences {
   dislikedIngredients: string[];
   mealFrequency: number;
   servingSize: number;
+  healthGoal: string;
+  favoriteProteins: string[];
+  /** kcal cap per meal; 0 = no limit */
+  maxCaloriesPerMeal: number;
 }
 
 export interface MealReminderTimes {
@@ -68,6 +72,9 @@ export const useUserStore = create<UserStore>()(
         dislikedIngredients: [],
         mealFrequency: 3,
         servingSize: 2,
+        healthGoal: 'No Goal',
+        favoriteProteins: [],
+        maxCaloriesPerMeal: 0,
       },
       darkMode: false,
       mealReminders: false,
@@ -99,6 +106,9 @@ export const useUserStore = create<UserStore>()(
           dislikedIngredients: [],
           mealFrequency: 3,
           servingSize: 2,
+          healthGoal: 'No Goal',
+          favoriteProteins: [],
+          maxCaloriesPerMeal: 0,
         },
         mealGoals: { calories: 2000, protein: 150, carbs: 200, fat: 65, water: 8 },
         todayCaloriesConsumed: 0,

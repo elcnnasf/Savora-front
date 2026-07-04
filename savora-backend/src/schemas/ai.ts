@@ -21,6 +21,11 @@ export const mealPlanSchema = z.object({
   spice_level:          z.string().max(20).optional(),
   cuisine_preference:   z.string().max(100).optional(),
   today_day_index:      z.number().int().min(0).max(6).optional(),
+  allergies:            z.array(z.string().max(50)).max(20).optional(),
+  disliked_ingredients: z.array(z.string().max(50)).max(30).optional(),
+  favorite_proteins:    z.array(z.string().max(30)).max(10).optional(),
+  meals_per_day:        z.number().int().min(2).max(6).optional(),
+  health_goal:          z.string().max(40).optional(),
 });
 
 export const scanIngredientsSchema = z.object({
