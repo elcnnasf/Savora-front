@@ -977,7 +977,9 @@ Return ONLY valid JSON with this exact structure:
         { role: 'user', content: prompt },
       ],
       temperature: 0.7,
-      max_tokens: 2000,
+      // 7 days × up to 6 meals with non-English titles can exceed a low cap —
+      // truncated output surfaces as "AI returned invalid JSON"
+      max_tokens: 6000,
       response_format: { type: 'json_object' },
     } as any);
   } catch (err: any) {
@@ -988,7 +990,16 @@ Return ONLY valid JSON with this exact structure:
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new AppError(500, 'AI returned invalid JSON');
+    const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (match) {
+      try {
+        parsed = JSON.parse(match[1]);
+      } catch {
+        throw new AppError(500, 'AI returned invalid JSON');
+      }
+    } else {
+      throw new AppError(500, 'AI returned invalid JSON');
+    }
   }
 
   const weekPlan: any[] = parsed.week_plan ?? [];
