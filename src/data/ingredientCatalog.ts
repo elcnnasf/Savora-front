@@ -11,7 +11,6 @@ export interface CatalogCategory {
   en: string; az: string; ru: string; tr: string;
   /** accent color for the category chip — keeps categories visually distinct from ingredient chips */
   color: string;
-  emoji: string;
 }
 
 export interface CatalogIngredient {
@@ -20,20 +19,20 @@ export interface CatalogIngredient {
 }
 
 export const CATALOG_CATEGORIES: CatalogCategory[] = [
-  { id: 'veg',    en: 'Vegetables',       az: 'Tərəvəzlər',            ru: 'Овощи',                 tr: 'Sebzeler',                 color: '#16A34A', emoji: '🥦' },
-  { id: 'fruit',  en: 'Fruits',           az: 'Meyvələr',              ru: 'Фрукты',                tr: 'Meyveler',                 color: '#F59E0B', emoji: '🍎' },
-  { id: 'herb',   en: 'Herbs & Spices',   az: 'Göyərti və ədviyyat',   ru: 'Зелень и специи',       tr: 'Otlar ve baharat',         color: '#10B981', emoji: '🌿' },
-  { id: 'meat',   en: 'Meat & Poultry',   az: 'Ət və quş əti',         ru: 'Мясо и птица',          tr: 'Et ve tavuk',              color: '#DC2626', emoji: '🥩' },
-  { id: 'fish',   en: 'Fish & Seafood',   az: 'Balıq və dəniz məhsulları', ru: 'Рыба и морепродукты', tr: 'Balık ve deniz ürünleri', color: '#0EA5E9', emoji: '🐟' },
-  { id: 'dairy',  en: 'Dairy & Eggs',     az: 'Süd məhsulları və yumurta', ru: 'Молочное и яйца',   tr: 'Süt ürünleri ve yumurta',  color: '#6366F1', emoji: '🥛' },
-  { id: 'grain',  en: 'Grains & Pasta',   az: 'Dənli və makaron',      ru: 'Крупы и макароны',      tr: 'Tahıl ve makarna',         color: '#D97706', emoji: '🌾' },
-  { id: 'legume', en: 'Legumes',          az: 'Paxlalılar',            ru: 'Бобовые',               tr: 'Baklagiller',              color: '#92400E', emoji: '🫘' },
-  { id: 'nut',    en: 'Nuts & Dried',     az: 'Qoz-fındıq və qurular', ru: 'Орехи и сухофрукты',    tr: 'Kuruyemiş ve kurular',     color: '#A16207', emoji: '🥜' },
-  { id: 'oil',    en: 'Oils & Sauces',    az: 'Yağlar və souslar',     ru: 'Масла и соусы',         tr: 'Yağlar ve soslar',         color: '#84CC16', emoji: '🫒' },
-  { id: 'bake',   en: 'Baking & Sweets',  az: 'Şirniyyat və un',       ru: 'Выпечка и сладкое',     tr: 'Fırın ve tatlı',           color: '#EC4899', emoji: '🍰' },
-  { id: 'can',    en: 'Canned & Pickled', az: 'Konserv və turşular',   ru: 'Консервы и соленья',    tr: 'Konserve ve turşu',        color: '#64748B', emoji: '🥫' },
-  { id: 'drink',  en: 'Drinks',           az: 'İçkilər',               ru: 'Напитки',               tr: 'İçecekler',                color: '#06B6D4', emoji: '🥤' },
-  { id: 'other',  en: 'Other',            az: 'Digər',                 ru: 'Прочее',                tr: 'Diğer',                    color: '#6B7280', emoji: '🧂' },
+  { id: 'veg',    en: 'Vegetables',       az: 'Tərəvəzlər',            ru: 'Овощи',                 tr: 'Sebzeler',                 color: '#16A34A' },
+  { id: 'fruit',  en: 'Fruits',           az: 'Meyvələr',              ru: 'Фрукты',                tr: 'Meyveler',                 color: '#F59E0B' },
+  { id: 'herb',   en: 'Herbs & Spices',   az: 'Göyərti və ədviyyat',   ru: 'Зелень и специи',       tr: 'Otlar ve baharat',         color: '#10B981' },
+  { id: 'meat',   en: 'Meat & Poultry',   az: 'Ət və quş əti',         ru: 'Мясо и птица',          tr: 'Et ve tavuk',              color: '#DC2626' },
+  { id: 'fish',   en: 'Fish & Seafood',   az: 'Balıq və dəniz məhsulları', ru: 'Рыба и морепродукты', tr: 'Balık ve deniz ürünleri', color: '#0EA5E9' },
+  { id: 'dairy',  en: 'Dairy & Eggs',     az: 'Süd məhsulları və yumurta', ru: 'Молочное и яйца',   tr: 'Süt ürünleri ve yumurta',  color: '#6366F1' },
+  { id: 'grain',  en: 'Grains & Pasta',   az: 'Dənli və makaron',      ru: 'Крупы и макароны',      tr: 'Tahıl ve makarna',         color: '#D97706' },
+  { id: 'legume', en: 'Legumes',          az: 'Paxlalılar',            ru: 'Бобовые',               tr: 'Baklagiller',              color: '#92400E' },
+  { id: 'nut',    en: 'Nuts & Dried',     az: 'Qoz-fındıq və qurular', ru: 'Орехи и сухофрукты',    tr: 'Kuruyemiş ve kurular',     color: '#A16207' },
+  { id: 'oil',    en: 'Oils & Sauces',    az: 'Yağlar və souslar',     ru: 'Масла и соусы',         tr: 'Yağlar ve soslar',         color: '#84CC16' },
+  { id: 'bake',   en: 'Baking & Sweets',  az: 'Şirniyyat və un',       ru: 'Выпечка и сладкое',     tr: 'Fırın ve tatlı',           color: '#EC4899' },
+  { id: 'can',    en: 'Canned & Pickled', az: 'Konserv və turşular',   ru: 'Консервы и соленья',    tr: 'Konserve ve turşu',        color: '#64748B' },
+  { id: 'drink',  en: 'Drinks',           az: 'İçkilər',               ru: 'Напитки',               tr: 'İçecekler',                color: '#06B6D4' },
+  { id: 'other',  en: 'Other',            az: 'Digər',                 ru: 'Прочее',                tr: 'Diğer',                    color: '#6B7280' },
 ];
 
 const i = (en: string, az: string, ru: string, tr: string, cat: CatalogCategoryId): CatalogIngredient =>

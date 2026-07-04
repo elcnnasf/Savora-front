@@ -12,7 +12,8 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import {
   X, Camera, Image as ImageIcon, Sparkles, RotateCcw,
   Zap, ZapOff, ChevronRight, RefreshCw, Plus, PenLine,
-  Minus, Search,
+  Minus, Search, Carrot, Apple, Leaf, Beef, Fish, Milk,
+  Wheat, Bean, Nut, Droplets, Cake, Package, CupSoda, UtensilsCrossed,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
@@ -32,6 +33,12 @@ const CORNER = 24;
 const CORNER_T = 3;
 
 type Phase = 'choice' | 'viewfinder' | 'scanning' | 'result' | 'manual';
+
+const CATEGORY_ICONS: Record<CatalogCategoryId, any> = {
+  veg: Carrot, fruit: Apple, herb: Leaf, meat: Beef, fish: Fish,
+  dairy: Milk, grain: Wheat, legume: Bean, nut: Nut, oil: Droplets,
+  bake: Cake, can: Package, drink: CupSoda, other: UtensilsCrossed,
+};
 
 export default function ScanScreen() {
   const navigation = useNavigation<Nav>();
@@ -322,10 +329,10 @@ export default function ScanScreen() {
                 })}
               </View>
 
-              {/* Catalog browser (scan results only — manual mode stays a plain
-                  text input). Category chips are color-coded + emoji so they
-                  read clearly as categories, not ingredients. */}
-              {!isManual && (
+              {/* Catalog browser (manual mode only — scan results stay clean).
+                  Category chips are color-coded with icons so they read
+                  clearly as categories, not ingredients. */}
+              {isManual && (
                 <>
                   <View style={styles.searchRow}>
                     <Search size={16} color={colors.textMuted} strokeWidth={2} />
@@ -352,6 +359,7 @@ export default function ScanScreen() {
                     >
                       {CATALOG_CATEGORIES.map((cat) => {
                         const active = activeCat === cat.id;
+                        const CatIcon = CATEGORY_ICONS[cat.id];
                         return (
                           <TouchableOpacity
                             key={cat.id}
@@ -362,7 +370,7 @@ export default function ScanScreen() {
                             onPress={() => setActiveCat(cat.id)}
                             activeOpacity={0.8}
                           >
-                            <Text style={styles.catChipEmoji}>{cat.emoji}</Text>
+                            <CatIcon size={14} color={active ? '#fff' : cat.color} strokeWidth={2.2} />
                             <Text style={[styles.catChipText, { color: active ? '#fff' : cat.color }]}>
                               {cat[(['en', 'az', 'ru', 'tr'].includes(lang) ? lang : 'en') as 'en' | 'az' | 'ru' | 'tr']}
                             </Text>
@@ -705,7 +713,6 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
     borderRadius: BorderRadius.md, paddingVertical: 8, paddingHorizontal: Spacing.md,
     borderWidth: 1.5,
   },
-  catChipEmoji: { fontSize: FontSize.sm },
   catChipText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, textTransform: 'uppercase', letterSpacing: 0.4 },
   catalogGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm,
