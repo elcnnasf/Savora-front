@@ -8,3 +8,8 @@ Images
 .expo
 .git
 .vs
+
+# Use CNG/Prebuild on EAS: the committed android/ folder is stale prebuild
+# output and its autolinking breaks the cloud build (expo-doctor advice).
+/android
+/ios
