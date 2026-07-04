@@ -71,6 +71,29 @@ export default function HomeScreen() {
   );
   const clearAllProgress = useCookingProgressStore((s) => s.clearAll);
 
+  // "Continue" section must never be empty: guests and first-time users get
+  // preference-ranked suggestions to start with (API pool, else bundled mocks)
+  const continueFallback = useMemo(() => {
+    if (inProgressRecipes.length > 0) return [];
+    const fromApi = recommendations.slice(1, 6).map((r) => localizeRecipe(r, lang));
+    if (fromApi.length > 0) {
+      return fromApi.map((r) => ({
+        key: r.id,
+        title: r.title,
+        image: r.image_url || FALLBACK_IMAGE,
+        time: r.cook_time ?? 0,
+        open: () => navigation.navigate('RecipeDetail', { recipe: r }),
+      }));
+    }
+    return RECIPES.slice(0, 5).map((r) => ({
+      key: r.id,
+      title: (r.translations?.[lang] as any)?.name ?? r.name,
+      image: r.image || FALLBACK_IMAGE,
+      time: r.cookTime,
+      open: () => navigation.navigate('RecipeDetail', { recipeId: r.id }),
+    }));
+  }, [inProgressRecipes.length, recommendations, lang]);
+
   // Fallback mock featured for when API has no data
   const mockFeatured = RECIPES[0];
   const mockName = (r: typeof RECIPES[0]) => (r.translations?.[lang] as any)?.name ?? r.name;
@@ -292,47 +315,71 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Continue where you left off — only half-cooked recipes */}
-        {inProgressRecipes.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{t('home.continueWhere')}</Text>
-              <TouchableOpacity onPress={clearAllProgress} activeOpacity={0.7}>
-                <Text style={styles.seeAll}>{t('discover.reset')}</Text>
-              </TouchableOpacity>
-            </View>
+        {/* Continue where you left off — never empty: falls back to
+            preference-ranked suggestions for guests / first-time users */}
+        <View style={styles.sectionHeader}>
+          <View>
+            <Text style={styles.sectionTitle}>{t('home.continueWhere')}</Text>
+            {inProgressRecipes.length === 0 && (
+              <Text style={styles.aiPickText}>{t('home.startCookingHint')}</Text>
+            )}
+          </View>
+          {inProgressRecipes.length > 0 && (
+            <TouchableOpacity onPress={clearAllProgress} activeOpacity={0.7}>
+              <Text style={styles.seeAll}>{t('discover.reset')}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalScroll}
-            >
-              {inProgressRecipes.map((recipe) => {
-                const pct = cookingProgress[recipe.id];
-                return (
-                  <TouchableOpacity
-                    key={recipe.id}
-                    style={styles.continueCard}
-                    activeOpacity={0.85}
-                    onPress={() => navigateToRecipe(recipe)}
-                  >
-                    <SafeImage uri={recipe.image_url || FALLBACK_IMAGE} style={styles.continueImage} />
-                    <View style={styles.progressBadge}>
-                      <Text style={styles.progressText}>{pct}%</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalScroll}
+        >
+          {inProgressRecipes.length > 0 ? (
+            inProgressRecipes.map((recipe) => {
+              const pct = cookingProgress[recipe.id];
+              return (
+                <TouchableOpacity
+                  key={recipe.id}
+                  style={styles.continueCard}
+                  activeOpacity={0.85}
+                  onPress={() => navigateToRecipe(recipe)}
+                >
+                  <SafeImage uri={recipe.image_url || FALLBACK_IMAGE} style={styles.continueImage} />
+                  <View style={styles.progressBadge}>
+                    <Text style={styles.progressText}>{pct}%</Text>
+                  </View>
+                  <View style={styles.continueInfo}>
+                    <Text style={styles.continueName}>{recipe.title}</Text>
+                    <View style={styles.progressBarRow}>
+                      <View style={[styles.progressBarFill, { width: `${pct}%` }]} />
                     </View>
-                    <View style={styles.continueInfo}>
-                      <Text style={styles.continueName}>{recipe.title}</Text>
-                      <View style={styles.progressBarRow}>
-                        <View style={[styles.progressBarFill, { width: `${pct}%` }]} />
-                      </View>
-                      <Text style={styles.continueTime}>{recipe.cook_time ?? 0} {t('recipe.min')}</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </>
-        )}
+                    <Text style={styles.continueTime}>{recipe.cook_time ?? 0} {t('recipe.min')}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            continueFallback.map((item) => (
+              <TouchableOpacity
+                key={item.key}
+                style={styles.continueCard}
+                activeOpacity={0.85}
+                onPress={item.open}
+              >
+                <SafeImage uri={item.image} style={styles.continueImage} />
+                <View style={styles.progressBadge}>
+                  <Text style={styles.progressText}>{t('home.newBadge')}</Text>
+                </View>
+                <View style={styles.continueInfo}>
+                  <Text style={styles.continueName} numberOfLines={1}>{item.title}</Text>
+                  <Text style={styles.continueTime}>{item.time} {t('recipe.min')}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+        </ScrollView>
 
       </ScrollView>
     </SafeAreaView>
