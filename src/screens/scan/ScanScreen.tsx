@@ -12,6 +12,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import {
   X, Camera, Image as ImageIcon, Sparkles, RotateCcw,
   Zap, ZapOff, ChevronRight, RefreshCw, Plus, PenLine,
+  Minus, Search,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
@@ -20,6 +21,10 @@ import { RootStackParamList } from '../../navigation/types';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { scanIngredients } from '../../api/ai';
+import {
+  CATALOG_CATEGORIES, INGREDIENT_CATALOG, CatalogCategoryId,
+  localizeIngredient, searchCatalog,
+} from '../../data/ingredientCatalog';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width, height } = Dimensions.get('window');
@@ -33,7 +38,7 @@ export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const { colors } = useTheme();
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const styles = makeStyles(colors);
 
   const [facing, setFacing]           = useState<CameraType>('back');
@@ -41,8 +46,11 @@ export default function ScanScreen() {
   const [phase, setPhase]             = useState<Phase>('choice');
   const [previewUri, setPreviewUri]   = useState<string | null>(null);
   const [ingredients, setIngredients] = useState<string[]>([]);
+  const [quantities, setQuantities]   = useState<Record<string, number>>({});
   const [scanError, setScanError]     = useState<string | null>(null);
   const [manualInput, setManualInput] = useState('');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [activeCat, setActiveCat]     = useState<CatalogCategoryId>('veg');
 
   // Safety net only — after client-side downscaling payloads are ~200KB
   const MAX_BASE64_LEN = 6_500_000;
@@ -86,6 +94,7 @@ export default function ScanScreen() {
         return;
       }
       setIngredients(found);
+      setQuantities(Object.fromEntries(found.map((n) => [n, 1])));
       setPhase('result');
     } catch (err: any) {
       setScanError(err?.message ?? t('scan.scanFailed'));
@@ -130,21 +139,45 @@ export default function ScanScreen() {
     setPhase('choice');
     setPreviewUri(null);
     setIngredients([]);
+    setQuantities({});
     setScanError(null);
     setManualInput('');
+    setCatalogSearch('');
   }
 
-  function addManualIngredient() {
-    const trimmed = manualInput.trim();
+  function addIngredient(name: string) {
+    const trimmed = name.trim();
     if (!trimmed) return;
     if (!ingredients.includes(trimmed)) {
       setIngredients((prev) => [...prev, trimmed]);
+      setQuantities((prev) => ({ ...prev, [trimmed]: 1 }));
     }
+  }
+
+  function addManualIngredient() {
+    addIngredient(manualInput);
     setManualInput('');
   }
 
   function removeIngredient(name: string) {
     setIngredients((prev) => prev.filter((i) => i !== name));
+    setQuantities((prev) => { const n = { ...prev }; delete n[name]; return n; });
+  }
+
+  function changeQty(name: string, delta: number) {
+    const current = quantities[name] ?? 1;
+    const next = current + delta;
+    if (next <= 0) { removeIngredient(name); return; }
+    if (next > 99) return;
+    setQuantities((prev) => ({ ...prev, [name]: next }));
+  }
+
+  // Recipe matching works on plain names; AI generation benefits from amounts
+  function ingredientsWithQty(): string[] {
+    return ingredients.map((n) => {
+      const q = quantities[n] ?? 1;
+      return q > 1 ? `${q}x ${n}` : n;
+    });
   }
 
   function goToMatches() {
@@ -154,7 +187,7 @@ export default function ScanScreen() {
 
   function goToAI() {
     if (ingredients.length === 0) return;
-    navigation.navigate('AIRecipe', { ingredients });
+    navigation.navigate('AIRecipe', { ingredients: ingredientsWithQty() });
   }
 
   if (phase === 'choice') {
@@ -259,24 +292,98 @@ export default function ScanScreen() {
                 <Sparkles size={13} color={colors.primary} strokeWidth={2} />
                 <Text style={styles.foundBadgeText}>{ingredients.length} {isManual ? t('scan.addedIngredients') : t('scan.foundIngredients')}</Text>
               </View>
-              <Text style={styles.foundHint}>{t('scan.tapToRemove')}</Text>
+              <Text style={styles.foundHint}>{t('scan.qtyHint')}</Text>
             </View>
 
             <ScrollView
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.tagContainer}
+              contentContainerStyle={styles.catalogScroll}
+              keyboardShouldPersistTaps="handled"
             >
-              {ingredients.map((name) => (
-                <TouchableOpacity
-                  key={name}
-                  style={styles.tag}
-                  onPress={() => removeIngredient(name)}
-                  activeOpacity={0.75}
+              <View style={styles.tagContainer}>
+                {ingredients.map((name) => {
+                  const qty = quantities[name] ?? 1;
+                  return (
+                    <View key={name} style={styles.tag}>
+                      <TouchableOpacity onPress={() => changeQty(name, -1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}>
+                        <Minus size={13} color={colors.primary} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                      <Text style={styles.tagText}>
+                        {localizeIngredient(name, lang)}{qty > 1 ? ` ×${qty}` : ''}
+                      </Text>
+                      <TouchableOpacity onPress={() => changeQty(name, 1)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                        <Plus size={13} color={colors.primary} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => removeIngredient(name)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
+                        <X size={12} color={colors.error} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Catalog browser — search + categories + tap-to-add chips */}
+              <View style={styles.searchRow}>
+                <Search size={16} color={colors.textMuted} strokeWidth={2} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={catalogSearch}
+                  onChangeText={setCatalogSearch}
+                  placeholder={t('scan.searchPlaceholder')}
+                  placeholderTextColor={colors.textMuted}
+                  returnKeyType="search"
+                />
+                {catalogSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setCatalogSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <X size={15} color={colors.textMuted} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {catalogSearch.trim().length === 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.catRow}
                 >
-                  <Text style={styles.tagText}>{name}</Text>
-                  <X size={12} color={colors.primary} strokeWidth={2.5} />
-                </TouchableOpacity>
-              ))}
+                  {CATALOG_CATEGORIES.map((cat) => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[styles.catChip, activeCat === cat.id && styles.catChipActive]}
+                      onPress={() => setActiveCat(cat.id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.catChipText, activeCat === cat.id && styles.catChipTextActive]}>
+                        {cat[(['en', 'az', 'ru', 'tr'].includes(lang) ? lang : 'en') as 'en' | 'az' | 'ru' | 'tr']}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+
+              <View style={styles.catalogGrid}>
+                {(catalogSearch.trim().length > 0
+                  ? searchCatalog(catalogSearch)
+                  : INGREDIENT_CATALOG.filter((it) => it.cat === activeCat)
+                ).map((item) => {
+                  const added = ingredients.includes(item.en);
+                  return (
+                    <TouchableOpacity
+                      key={item.en}
+                      style={[styles.catalogChip, added && styles.catalogChipAdded]}
+                      onPress={() => added ? removeIngredient(item.en) : addIngredient(item.en)}
+                      activeOpacity={0.75}
+                    >
+                      {added
+                        ? <X size={11} color={colors.primary} strokeWidth={2.5} />
+                        : <Plus size={11} color={colors.textMuted} strokeWidth={2.5} />}
+                      <Text style={[styles.catalogChipText, added && { color: colors.primary }]}>
+                        {localizeIngredient(item.en, lang)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </ScrollView>
 
             <View style={styles.actionFooter}>
@@ -558,17 +665,47 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   foundBadgeText: { fontSize: FontSize.sm, color: c.primary, fontWeight: FontWeight.semibold },
   foundHint:      { fontSize: FontSize.xs, color: c.textMuted },
 
+  catalogScroll: { paddingBottom: 220 },
   tagContainer: {
     flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm,
-    paddingHorizontal: Spacing.base, paddingBottom: 140,
+    paddingHorizontal: Spacing.base,
   },
   tag: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 7,
     backgroundColor: c.primarySurface, borderRadius: BorderRadius.full,
     paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
     borderWidth: 1, borderColor: c.primary + '40',
   },
   tagText: { fontSize: FontSize.sm, color: c.primary, fontWeight: FontWeight.medium },
+
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: c.surface, borderRadius: BorderRadius.full,
+    borderWidth: 1.5, borderColor: c.border,
+    paddingHorizontal: Spacing.base, marginHorizontal: Spacing.base,
+    marginTop: Spacing.base,
+  },
+  searchInput: { flex: 1, paddingVertical: Spacing.sm + 2, fontSize: FontSize.sm, color: c.text },
+  catRow: { gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingTop: Spacing.md },
+  catChip: {
+    borderRadius: BorderRadius.full, paddingVertical: 7, paddingHorizontal: Spacing.md,
+    backgroundColor: c.surface, borderWidth: 1, borderColor: c.border,
+  },
+  catChipActive: { backgroundColor: c.primary, borderColor: c.primary },
+  catChipText: { fontSize: FontSize.xs, color: c.textSecondary, fontWeight: FontWeight.medium },
+  catChipTextActive: { color: c.textInverse },
+  catalogGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.md,
+  },
+  catalogChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: c.surface, borderRadius: BorderRadius.full,
+    paddingVertical: 7, paddingHorizontal: Spacing.md,
+    borderWidth: 1, borderColor: c.border,
+  },
+  catalogChipAdded: { backgroundColor: c.primarySurface, borderColor: c.primary + '60' },
+  catalogChipText: { fontSize: FontSize.xs, color: c.textSecondary, fontWeight: FontWeight.medium },
 
   manualInputRow: {
     flexDirection: 'row', gap: Spacing.sm,
