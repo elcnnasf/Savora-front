@@ -25,7 +25,6 @@ import { generateMealPlan } from '../../api/ai';
 import { useUserStore } from '../../store/userStore';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
-import { useDiscoverFilterStore } from '../../store/discoverFilterStore';
 
 const LOCATIONS = ['Azerbaijan', 'Turkey', 'Europe', 'Middle East', 'Asia', 'Americas', 'Mediterranean', 'International'];
 const BUDGETS = [
@@ -42,7 +41,6 @@ export default function MealPlannerScreen() {
   const todayIdx   = getTodayIndex();
   const weekStart  = getWeekStart();
   const { mealGoals, preferences, language } = useUserStore();
-  const setDiscoverFilter = useDiscoverFilterStore((s) => s.setPendingQuery);
   const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = makeStyles(colors);
@@ -472,46 +470,52 @@ export default function MealPlannerScreen() {
             {selectedMeal?.calories ? (
               <Text style={styles.mealDetailCalories}>{selectedMeal.calories} kcal</Text>
             ) : null}
-            <TouchableOpacity
-              style={[styles.saveBtn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]}
-              activeOpacity={0.85}
-              onPress={() => {
-                setMealDetailVisible(false);
-                if (selectedMeal?.recipe_id) {
-                  // AI plan linked this meal to a real DB recipe — open it directly
-                  navigation.navigate('RecipeDetail', { recipeId: selectedMeal.recipe_id });
-                } else {
-                  setDiscoverFilter(selectedMeal?.recipe_title ?? '');
-                  navigation.navigate('Main' as any);
-                }
-              }}
-            >
-              <Search size={16} color={colors.primary} strokeWidth={2} />
-              <Text style={[styles.saveBtnText, { color: colors.primary }]}>{t('planner.viewRecipe')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.saveBtn}
-              activeOpacity={0.85}
-              onPress={() => {
-                setMealDetailVisible(false);
-                navigation.navigate('AIRecipe', { initialDescription: selectedMeal?.recipe_title });
-              }}
-            >
-              <Sparkles size={16} color={colors.textInverse} strokeWidth={2} />
-              <Text style={styles.saveBtnText}>{t('planner.generateWithAi')}</Text>
-            </TouchableOpacity>
+            <Text style={styles.mealDetailNote}>
+              {selectedMeal?.recipe_id ? t('planner.hasRecipeNote') : t('planner.noRecipeNote')}
+            </Text>
+            {selectedMeal?.recipe_id ? (
+              // Meal is linked to a ready recipe in the collection — open it
+              <TouchableOpacity
+                style={styles.saveBtn}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setMealDetailVisible(false);
+                  navigation.navigate('RecipeDetail', { recipeId: selectedMeal.recipe_id! });
+                }}
+              >
+                <Search size={16} color={colors.textInverse} strokeWidth={2} />
+                <Text style={styles.saveBtnText}>{t('planner.viewRecipe')}</Text>
+              </TouchableOpacity>
+            ) : (
+              // No ready recipe for this meal — offer AI generation only
+              <TouchableOpacity
+                style={styles.saveBtn}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setMealDetailVisible(false);
+                  navigation.navigate('AIRecipe', { initialDescription: selectedMeal?.recipe_title });
+                }}
+              >
+                <Sparkles size={16} color={colors.textInverse} strokeWidth={2} />
+                <Text style={styles.saveBtnText}>{t('planner.generateWithAi')}</Text>
+              </TouchableOpacity>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
 
       <View style={styles.footer}>
         <TouchableOpacity style={styles.addManualBtn} activeOpacity={0.85} onPress={() => openAdd('breakfast')}>
-          <Plus size={18} color={colors.primary} strokeWidth={2.5} />
-          <Text style={styles.addManualBtnText}>{t('planner.addMeal')}</Text>
+          <Plus size={16} color={colors.primary} strokeWidth={2.5} />
+          <Text style={styles.addManualBtnText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+            {t('planner.addMeal')}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.aiBannerBtn} activeOpacity={0.85} onPress={openAiModal}>
-          <Sparkles size={18} color={colors.textInverse} strokeWidth={2.5} />
-          <Text style={styles.aiBannerBtnText}>{t('planner.aiMealPlan')}</Text>
+          <Sparkles size={16} color={colors.textInverse} strokeWidth={2.5} />
+          <Text style={styles.aiBannerBtnText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+            {t('planner.aiMealPlan')}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -567,6 +571,7 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   saveBtn:           { backgroundColor: c.primary, borderRadius: BorderRadius.full, paddingVertical: Spacing.base + 2, alignItems: 'center', marginTop: Spacing.sm, flexDirection: 'row', justifyContent: 'center', gap: Spacing.sm },
   saveBtnText:       { color: c.textInverse, fontSize: FontSize.md, fontWeight: FontWeight.semibold },
   mealDetailCalories: { fontSize: FontSize.base, color: c.textSecondary, textAlign: 'center' },
+  mealDetailNote: { fontSize: FontSize.xs, color: c.textMuted, textAlign: 'center', lineHeight: FontSize.xs * 1.5 },
 
   aiStepLabel: { fontSize: FontSize.xs, color: c.textMuted, marginTop: 2 },
   aiStepContent: { gap: Spacing.md },
@@ -600,8 +605,8 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   generatingSubtitle: { fontSize: FontSize.sm, color: c.textMuted, textAlign: 'center', lineHeight: FontSize.sm * 1.6, paddingHorizontal: Spacing.lg },
 
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: c.background, borderTopWidth: 1, borderTopColor: c.border, padding: Spacing.base, flexDirection: 'row', gap: Spacing.sm },
-  addManualBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, borderRadius: BorderRadius.full, paddingVertical: Spacing.base, borderWidth: 1.5, borderColor: c.primary },
-  addManualBtnText: { color: c.primary, fontSize: FontSize.base, fontWeight: FontWeight.semibold },
-  aiBannerBtn: { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, backgroundColor: c.primary, borderRadius: BorderRadius.full, paddingVertical: Spacing.base },
-  aiBannerBtnText: { color: c.textInverse, fontSize: FontSize.base, fontWeight: FontWeight.semibold },
+  addManualBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: BorderRadius.full, paddingVertical: Spacing.base, paddingHorizontal: Spacing.sm, borderWidth: 1.5, borderColor: c.primary },
+  addManualBtnText: { color: c.primary, fontSize: FontSize.sm, fontWeight: FontWeight.semibold, flexShrink: 1 },
+  aiBannerBtn: { flex: 1.4, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: c.primary, borderRadius: BorderRadius.full, paddingVertical: Spacing.base, paddingHorizontal: Spacing.sm },
+  aiBannerBtnText: { color: c.textInverse, fontSize: FontSize.sm, fontWeight: FontWeight.semibold, flexShrink: 1 },
 });
