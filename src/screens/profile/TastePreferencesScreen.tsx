@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import {
   X, Plus, Info, ChevronLeft, ChevronRight, Check,
-  Salad, ShieldAlert, Globe2, Flame, ChefHat, Users,
+  Salad, ShieldAlert, Globe2, Flame, ChefHat, Users, RefreshCw,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius } from '../../constants/spacing';
@@ -36,10 +36,14 @@ const TOTAL_STEPS = 6;
 
 export default function TastePreferencesScreen() {
   const navigation = useNavigation();
-  const { preferences, setPreferences } = useUserStore();
+  const { preferences, setPreferences, preferencesCompleted, setPreferencesCompleted } = useUserStore();
   const { t, raw } = useTranslation();
   const { colors } = useTheme();
   const styles = makeStyles(colors);
+
+  // Once the wizard has been completed, the screen opens as a read-only
+  // summary; the update button restarts the questions
+  const [mode, setMode] = useState<'summary' | 'wizard'>(preferencesCompleted ? 'summary' : 'wizard');
 
   const dietaryLabels      = raw<Record<string, string>>('taste.options.dietary');
   const goalLabels         = raw<Record<string, string>>('taste.options.healthGoals');
@@ -94,7 +98,13 @@ export default function TastePreferencesScreen() {
       dislikedIngredients: disliked, mealFrequency: mealFreq, servingSize: serving,
       healthGoal: goal, favoriteProteins: proteins, maxCaloriesPerMeal: maxCal,
     });
+    setPreferencesCompleted(true);
     navigation.goBack();
+  }
+
+  function startWizard() {
+    setStep(0);
+    setMode('wizard');
   }
 
   function goNext() {
@@ -104,6 +114,7 @@ export default function TastePreferencesScreen() {
 
   function goBack() {
     if (step > 0) setStep(step - 1);
+    else if (preferencesCompleted) setMode('summary');
     else navigation.goBack();
   }
 
@@ -140,6 +151,52 @@ export default function TastePreferencesScreen() {
 
   const label = (map: Record<string, string>, key: string) => map[key] ?? key;
   const labels = (map: Record<string, string>, keys: string[]) => keys.map((k) => label(map, k)).join(', ');
+
+  function renderSummaryCard() {
+    return (
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryHeader}>
+          <Check size={16} color={colors.primary} strokeWidth={2.5} />
+          <Text style={styles.summaryTitle}>{t('taste.summaryTitle')}</Text>
+        </View>
+        <SummaryRow label={t('taste.goalTitle')}      value={label(goalLabels, goal)} />
+        <SummaryRow label={t('taste.dietaryTitle')}   value={labels(dietaryLabels, dietary)} />
+        <SummaryRow label={t('taste.allergiesTitle')} value={labels(allergyLabels, allergies)} />
+        <SummaryRow label={t('taste.dislikedTitle')}  value={disliked.join(', ')} />
+        <SummaryRow label={t('taste.cuisinesTitle')}  value={labels(cuisineLabels, cuisines)} />
+        <SummaryRow label={t('taste.proteinsTitle')}  value={labels(proteinLabels, proteins)} />
+        <SummaryRow label={t('taste.spiceTitle')}     value={label(spiceLabels, spice)} />
+        <SummaryRow label={t('taste.maxCalTitle')}    value={maxCalLabel(maxCal)} />
+        <SummaryRow label={t('taste.skillTitle')}     value={label(cookingSkillLabels, skill)} />
+        <SummaryRow label={t('taste.prepTimeTitle')}  value={label(prepTimeLabels, prepTime)} />
+        <SummaryRow label={t('taste.budgetTitle')}    value={label(budgetLabels, budget)} />
+        <SummaryRow label={t('taste.mealsPerDayTitle')} value={`${mealFreq} ${t('taste.meals')}`} />
+        <SummaryRow label={t('taste.servingTitle')}   value={`${serving} ${serving === 1 ? t('taste.person') : t('taste.persons')}`} />
+      </View>
+    );
+  }
+
+  if (mode === 'summary') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <Header title={t('taste.title')} onBack={() => navigation.goBack()} />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+          <TouchableOpacity style={styles.updateBtn} onPress={startWizard} activeOpacity={0.85}>
+            <RefreshCw size={16} color={colors.textInverse} strokeWidth={2.5} />
+            <Text style={styles.updateBtnText}>{t('taste.updateBtn')}</Text>
+          </TouchableOpacity>
+
+          {renderSummaryCard()}
+
+          <View style={styles.infoBanner}>
+            <Info size={14} color={colors.primary} strokeWidth={2} />
+            <Text style={styles.infoText}>{t('taste.infoText')}</Text>
+          </View>
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -285,23 +342,7 @@ export default function TastePreferencesScreen() {
               ))}
             </Section>
 
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryHeader}>
-                <Check size={16} color={colors.primary} strokeWidth={2.5} />
-                <Text style={styles.summaryTitle}>{t('taste.summaryTitle')}</Text>
-              </View>
-              <SummaryRow label={t('taste.goalTitle')}      value={label(goalLabels, goal)} />
-              <SummaryRow label={t('taste.dietaryTitle')}   value={labels(dietaryLabels, dietary)} />
-              <SummaryRow label={t('taste.allergiesTitle')} value={labels(allergyLabels, allergies)} />
-              <SummaryRow label={t('taste.dislikedTitle')}  value={disliked.join(', ')} />
-              <SummaryRow label={t('taste.cuisinesTitle')}  value={labels(cuisineLabels, cuisines)} />
-              <SummaryRow label={t('taste.proteinsTitle')}  value={labels(proteinLabels, proteins)} />
-              <SummaryRow label={t('taste.spiceTitle')}     value={label(spiceLabels, spice)} />
-              <SummaryRow label={t('taste.maxCalTitle')}    value={maxCalLabel(maxCal)} />
-              <SummaryRow label={t('taste.skillTitle')}     value={label(cookingSkillLabels, skill)} />
-              <SummaryRow label={t('taste.prepTimeTitle')}  value={label(prepTimeLabels, prepTime)} />
-              <SummaryRow label={t('taste.budgetTitle')}    value={label(budgetLabels, budget)} />
-            </View>
+            {renderSummaryCard()}
 
             <View style={styles.infoBanner}>
               <Info size={14} color={colors.primary} strokeWidth={2} />
@@ -392,6 +433,12 @@ function makeStyles(c: AppColors) {
     },
     dislikedTagText: { fontSize: FontSize.sm, color: c.error, fontWeight: FontWeight.medium },
 
+    updateBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+      backgroundColor: c.primary, borderRadius: BorderRadius.full,
+      paddingVertical: Spacing.base, marginBottom: Spacing.base,
+    },
+    updateBtnText: { fontSize: FontSize.md, fontWeight: FontWeight.semibold, color: c.textInverse },
     summaryCard: {
       backgroundColor: c.surface, borderRadius: BorderRadius.lg,
       padding: Spacing.base, marginBottom: Spacing.base,

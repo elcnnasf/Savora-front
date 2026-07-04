@@ -36,6 +36,8 @@ export interface MealReminderTimes {
 interface UserStore {
   mealGoals: MealGoals;
   preferences: UserPreferences;
+  /** true once the taste-preferences wizard has been completed at least once */
+  preferencesCompleted: boolean;
   darkMode: boolean;
   mealReminders: boolean;
   mealReminderTimes: MealReminderTimes;
@@ -46,6 +48,7 @@ interface UserStore {
   todayCaloriesConsumed: number;
   setMealGoals: (goals: Partial<MealGoals>) => void;
   setPreferences: (prefs: Partial<UserPreferences>) => void;
+  setPreferencesCompleted: (v: boolean) => void;
   setDarkMode: (v: boolean) => void;
   setMealReminders: (v: boolean) => void;
   setMealReminderTimes: (v: MealReminderTimes) => void;
@@ -76,6 +79,7 @@ export const useUserStore = create<UserStore>()(
         favoriteProteins: [],
         maxCaloriesPerMeal: 0,
       },
+      preferencesCompleted: false,
       darkMode: false,
       mealReminders: false,
       mealReminderTimes: { breakfast: '08:00', lunch: '13:00', dinner: '19:00' },
@@ -86,6 +90,7 @@ export const useUserStore = create<UserStore>()(
       todayCaloriesConsumed: 0,
       setMealGoals:             (goals) => set((s) => ({ mealGoals:   { ...s.mealGoals,   ...goals } })),
       setPreferences:           (prefs) => set((s) => ({ preferences: { ...s.preferences, ...prefs } })),
+      setPreferencesCompleted:  (v) => set({ preferencesCompleted: v }),
       setDarkMode:              (v) => set({ darkMode: v }),
       setMealReminders:         (v) => set({ mealReminders: v }),
       setMealReminderTimes:     (v) => set({ mealReminderTimes: v }),
@@ -111,6 +116,7 @@ export const useUserStore = create<UserStore>()(
           maxCaloriesPerMeal: 0,
         },
         mealGoals: { calories: 2000, protein: 150, carbs: 200, fat: 65, water: 8 },
+        preferencesCompleted: false,
         todayCaloriesConsumed: 0,
         mealReminders: false,
         mealReminderTimes: { breakfast: '08:00', lunch: '13:00', dinner: '19:00' },
