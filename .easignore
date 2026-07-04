@@ -1,0 +1,10 @@
+# Not needed for mobile builds.
+# savora-backend is an NTFS junction to Desktop\Savora-Backend — EAS CLI
+# cannot copy it on Windows (symlink EPERM) and the backend never ships
+# in the app binary anyway.
+savora-backend
+node_modules
+Images
+.expo
+.git
+.vs
