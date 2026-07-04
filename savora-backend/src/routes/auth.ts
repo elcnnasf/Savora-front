@@ -165,4 +165,46 @@ router.post(
   },
 );
 
+/**
+ * GET /auth/preferences — the account's saved Taste Preferences (or null)
+ */
+router.get(
+  '/preferences',
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const taste_prefs = await authService.getTastePrefs(req.user!.id);
+      res.json({ success: true, data: { taste_prefs } });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * PUT /auth/preferences
+ * Body: { taste_prefs: { ...full wizard answers } }
+ */
+router.put(
+  '/preferences',
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const prefs = req.body?.taste_prefs;
+      if (!prefs || typeof prefs !== 'object' || Array.isArray(prefs)) {
+        res.status(400).json({ success: false, error: 'taste_prefs object required' });
+        return;
+      }
+      if (JSON.stringify(prefs).length > 20_000) {
+        res.status(400).json({ success: false, error: 'taste_prefs too large' });
+        return;
+      }
+      await authService.saveTastePrefs(req.user!.id, prefs);
+      res.json({ success: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 export default router;

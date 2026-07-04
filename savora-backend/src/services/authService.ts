@@ -247,3 +247,30 @@ export async function getMe(userId: string) {
     },
   };
 }
+
+// ─── Taste preferences sync ─────────────────────────────────────────────────
+// Stores the full Taste Preferences wizard answers per account so they follow
+// the user across devices and reinstalls (requires the taste_prefs migration).
+
+export async function getTastePrefs(userId: string): Promise<unknown | null> {
+  const { data, error } = await supabaseAdmin
+    .from('user_preferences')
+    .select('taste_prefs')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  // Missing column (migration not run yet) or no row — behave as "nothing saved"
+  if (error) return null;
+  return data?.taste_prefs ?? null;
+}
+
+export async function saveTastePrefs(userId: string, prefs: unknown): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('user_preferences')
+    .upsert(
+      { user_id: userId, taste_prefs: prefs, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    );
+
+  if (error) throw new AppError(500, error.message);
+}

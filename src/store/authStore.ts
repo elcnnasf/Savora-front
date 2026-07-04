@@ -16,6 +16,20 @@ function clearUserLocalStores() {
   useUserStore.getState().resetUserData();
 }
 
+// Pull the account's saved Taste Preferences from the server (survives
+// reinstalls / new devices). Fire-and-forget: any failure just leaves the
+// local defaults in place.
+async function hydrateTastePrefs() {
+  try {
+    const res = await authApi.getTastePrefs();
+    const prefs = res.data?.taste_prefs as Record<string, unknown> | null;
+    if (prefs && typeof prefs === 'object') {
+      useUserStore.getState().setPreferences(prefs as any);
+      useUserStore.getState().setPreferencesCompleted(true);
+    }
+  } catch { /* offline or migration not run yet — keep local state */ }
+}
+
 const ONBOARDING_KEY = 'savora_onboarding_done';
 const USER_CACHE_KEY = 'savora_user_cache';
 
@@ -112,6 +126,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: u,
       token: session.access_token,
     });
+    hydrateTastePrefs();
   },
 
   signInWithGoogle: async (idToken: string) => {
@@ -127,6 +142,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: u,
       token: session.access_token,
     });
+    hydrateTastePrefs();
   },
 
   signUp: async (name, email, password) => {
@@ -170,6 +186,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         token,
         isLoading: false,
       });
+      // Fresh install with an existing session: local prefs are gone but the
+      // account's are on the server — restore them
+      if (!useUserStore.getState().preferencesCompleted) hydrateTastePrefs();
     } catch (e) {
       // Offline app start must NOT log the user out — restore the cached profile
       // and keep the token so saved content stays accessible without internet

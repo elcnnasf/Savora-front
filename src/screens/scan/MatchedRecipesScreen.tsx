@@ -12,7 +12,6 @@ import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
 import { RootStackParamList } from '../../navigation/types';
 import { matchRecipes, MatchedRecipe } from '../../api/recipes';
-import { generateRecipe, buildAiPreferences } from '../../api/ai';
 import { ApiRecipe } from '../../navigation/types';
 import { preferenceScore, violatesHardRules } from '../../utils/preferenceScore';
 import { useUserStore } from '../../store/userStore';
@@ -37,7 +36,7 @@ export default function MatchedRecipesScreen() {
   const navigation = useNavigation<Nav>();
   const route      = useRoute<Route>();
   const { ingredients } = route.params;
-  const { preferences, language } = useUserStore();
+  const { preferences } = useUserStore();
   const { colors } = useTheme();
   const { t, lang } = useTranslation();
   const dynStyles = makeStyles(colors);
@@ -45,7 +44,6 @@ export default function MatchedRecipesScreen() {
   const [recipes, setRecipes]     = useState<MatchedRecipe[]>([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     load();
@@ -76,20 +74,9 @@ export default function MatchedRecipesScreen() {
     }
   }
 
-  async function handleGenerateAI() {
-    setGenerating(true);
-    try {
-      const res = await generateRecipe({
-        ingredients,
-        language,
-        preferences: buildAiPreferences(preferences),
-      });
-      navigation.replace('RecipeDetail', { recipe: res.data });
-    } catch (err: any) {
-      setError(err?.message ?? 'AI generation failed.');
-    } finally {
-      setGenerating(false);
-    }
+  function handleGenerateAI() {
+    // AIRecipe's ingredients mode shows 5 dish suggestions before generating
+    navigation.navigate('AIRecipe', { ingredients });
   }
 
   function openRecipe(item: MatchedRecipe) {
@@ -188,19 +175,12 @@ export default function MatchedRecipesScreen() {
           }
           ListFooterComponent={
             <TouchableOpacity
-              style={[dynStyles.aiBtn, generating && dynStyles.aiBtnLoading]}
+              style={dynStyles.aiBtn}
               onPress={handleGenerateAI}
               activeOpacity={0.85}
-              disabled={generating}
             >
-              {generating ? (
-                <ActivityIndicator color={colors.textInverse} size="small" />
-              ) : (
-                <Sparkles size={18} color={colors.textInverse} strokeWidth={2.5} />
-              )}
-              <Text style={dynStyles.aiBtnText}>
-                {generating ? t('common.loading') : t('matchedRecipes.generateNew')}
-              </Text>
+              <Sparkles size={18} color={colors.textInverse} strokeWidth={2.5} />
+              <Text style={dynStyles.aiBtnText}>{t('matchedRecipes.generateNew')}</Text>
             </TouchableOpacity>
           }
         />

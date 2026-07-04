@@ -89,3 +89,14 @@ export function subscribe(plan: 'premium' | 'pro' | 'free') {
     { method: 'POST', body: { plan } },
   );
 }
+
+export function getTastePrefs() {
+  return apiFetch<{ success: boolean; data: { taste_prefs: unknown | null } }>('/auth/preferences');
+}
+
+export function saveTastePrefs(prefs: unknown) {
+  return apiFetch<{ success: boolean }>('/auth/preferences', {
+    method: 'PUT',
+    body: { taste_prefs: prefs },
+  });
+}

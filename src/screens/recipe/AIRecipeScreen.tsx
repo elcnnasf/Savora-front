@@ -79,9 +79,36 @@ export default function AIRecipeScreen() {
 
   useEffect(() => {
     if (isIngredientsMode) {
-      directGenerate();
+      suggestFromIngredients();
     }
   }, []);
+
+  // Scanned-ingredients entry: offer 5 dish suggestions built around the
+  // ingredients instead of jumping straight to one generated recipe.
+  // Falls back to direct generation if the suggestion call fails.
+  async function suggestFromIngredients() {
+    fadeTransition(() => setPhase('suggesting'));
+    try {
+      // schema caps query at 200 chars — keep whole ingredient names only
+      let q = '';
+      for (const ing of scannedIngredients) {
+        const next = q ? `${q}, ${ing}` : ing;
+        if (next.length > 190) break;
+        q = next;
+      }
+      const res = await suggestRecipes({ query: q || scannedIngredients[0], language });
+      const list = res.data.suggestions;
+      if (!list || list.length === 0) {
+        await directGenerate();
+        return;
+      }
+      setSuggestions(list);
+      setSelected(null);
+      fadeTransition(() => setPhase('suggestions'));
+    } catch {
+      await directGenerate();
+    }
+  }
 
   function toggleDietary(item: string) {
     setDietary((prev) =>

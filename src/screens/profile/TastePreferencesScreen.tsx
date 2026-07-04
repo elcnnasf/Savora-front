@@ -17,6 +17,8 @@ import { Button } from '../../components/ui/Button';
 import { Chip } from '../../components/ui/Chip';
 import { useTheme } from '../../hooks/useTheme';
 import { useUserStore } from '../../store/userStore';
+import { useAuthStore } from '../../store/authStore';
+import { saveTastePrefs } from '../../api/auth';
 import { useTranslation } from '../../hooks/useTranslation';
 
 const DIETARY       = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Keto', 'Low Carb', 'High Protein', 'Healthy', 'Paleo', 'Halal', 'Kosher', 'Sugar-Free'];
@@ -92,13 +94,18 @@ export default function TastePreferencesScreen() {
   }
 
   function save() {
-    setPreferences({
+    const full = {
       dietary, cuisines, spiceLevel: spice, allergies,
       cookingSkill: skill, prepTimePreference: prepTime, budget,
       dislikedIngredients: disliked, mealFrequency: mealFreq, servingSize: serving,
       healthGoal: goal, favoriteProteins: proteins, maxCaloriesPerMeal: maxCal,
-    });
+    };
+    setPreferences(full);
     setPreferencesCompleted(true);
+    // Sync to the account so preferences survive reinstall / new device
+    if (useAuthStore.getState().isAuthenticated) {
+      saveTastePrefs(full).catch(() => {});
+    }
     navigation.goBack();
   }
 
