@@ -322,68 +322,81 @@ export default function ScanScreen() {
                 })}
               </View>
 
-              {/* Catalog browser — search + categories + tap-to-add chips */}
-              <View style={styles.searchRow}>
-                <Search size={16} color={colors.textMuted} strokeWidth={2} />
-                <TextInput
-                  style={styles.searchInput}
-                  value={catalogSearch}
-                  onChangeText={setCatalogSearch}
-                  placeholder={t('scan.searchPlaceholder')}
-                  placeholderTextColor={colors.textMuted}
-                  returnKeyType="search"
-                />
-                {catalogSearch.length > 0 && (
-                  <TouchableOpacity onPress={() => setCatalogSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <X size={15} color={colors.textMuted} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                )}
-              </View>
+              {/* Catalog browser (scan results only — manual mode stays a plain
+                  text input). Category chips are color-coded + emoji so they
+                  read clearly as categories, not ingredients. */}
+              {!isManual && (
+                <>
+                  <View style={styles.searchRow}>
+                    <Search size={16} color={colors.textMuted} strokeWidth={2} />
+                    <TextInput
+                      style={styles.searchInput}
+                      value={catalogSearch}
+                      onChangeText={setCatalogSearch}
+                      placeholder={t('scan.searchPlaceholder')}
+                      placeholderTextColor={colors.textMuted}
+                      returnKeyType="search"
+                    />
+                    {catalogSearch.length > 0 && (
+                      <TouchableOpacity onPress={() => setCatalogSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <X size={15} color={colors.textMuted} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
 
-              {catalogSearch.trim().length === 0 && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.catRow}
-                >
-                  {CATALOG_CATEGORIES.map((cat) => (
-                    <TouchableOpacity
-                      key={cat.id}
-                      style={[styles.catChip, activeCat === cat.id && styles.catChipActive]}
-                      onPress={() => setActiveCat(cat.id)}
-                      activeOpacity={0.8}
+                  {catalogSearch.trim().length === 0 && (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.catRow}
                     >
-                      <Text style={[styles.catChipText, activeCat === cat.id && styles.catChipTextActive]}>
-                        {cat[(['en', 'az', 'ru', 'tr'].includes(lang) ? lang : 'en') as 'en' | 'az' | 'ru' | 'tr']}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                      {CATALOG_CATEGORIES.map((cat) => {
+                        const active = activeCat === cat.id;
+                        return (
+                          <TouchableOpacity
+                            key={cat.id}
+                            style={[
+                              styles.catChip,
+                              { borderColor: cat.color, backgroundColor: active ? cat.color : cat.color + '16' },
+                            ]}
+                            onPress={() => setActiveCat(cat.id)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.catChipEmoji}>{cat.emoji}</Text>
+                            <Text style={[styles.catChipText, { color: active ? '#fff' : cat.color }]}>
+                              {cat[(['en', 'az', 'ru', 'tr'].includes(lang) ? lang : 'en') as 'en' | 'az' | 'ru' | 'tr']}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
+
+                  <View style={styles.catalogGrid}>
+                    {(catalogSearch.trim().length > 0
+                      ? searchCatalog(catalogSearch)
+                      : INGREDIENT_CATALOG.filter((it) => it.cat === activeCat)
+                    ).map((item) => {
+                      const added = ingredients.includes(item.en);
+                      return (
+                        <TouchableOpacity
+                          key={item.en}
+                          style={[styles.catalogChip, added && styles.catalogChipAdded]}
+                          onPress={() => added ? removeIngredient(item.en) : addIngredient(item.en)}
+                          activeOpacity={0.75}
+                        >
+                          {added
+                            ? <X size={11} color={colors.primary} strokeWidth={2.5} />
+                            : <Plus size={11} color={colors.textMuted} strokeWidth={2.5} />}
+                          <Text style={[styles.catalogChipText, added && { color: colors.primary }]}>
+                            {localizeIngredient(item.en, lang)}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
               )}
-
-              <View style={styles.catalogGrid}>
-                {(catalogSearch.trim().length > 0
-                  ? searchCatalog(catalogSearch)
-                  : INGREDIENT_CATALOG.filter((it) => it.cat === activeCat)
-                ).map((item) => {
-                  const added = ingredients.includes(item.en);
-                  return (
-                    <TouchableOpacity
-                      key={item.en}
-                      style={[styles.catalogChip, added && styles.catalogChipAdded]}
-                      onPress={() => added ? removeIngredient(item.en) : addIngredient(item.en)}
-                      activeOpacity={0.75}
-                    >
-                      {added
-                        ? <X size={11} color={colors.primary} strokeWidth={2.5} />
-                        : <Plus size={11} color={colors.textMuted} strokeWidth={2.5} />}
-                      <Text style={[styles.catalogChipText, added && { color: colors.primary }]}>
-                        {localizeIngredient(item.en, lang)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
             </ScrollView>
 
             <View style={styles.actionFooter}>
@@ -688,12 +701,12 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   searchInput: { flex: 1, paddingVertical: Spacing.sm + 2, fontSize: FontSize.sm, color: c.text },
   catRow: { gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingTop: Spacing.md },
   catChip: {
-    borderRadius: BorderRadius.full, paddingVertical: 7, paddingHorizontal: Spacing.md,
-    backgroundColor: c.surface, borderWidth: 1, borderColor: c.border,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: BorderRadius.md, paddingVertical: 8, paddingHorizontal: Spacing.md,
+    borderWidth: 1.5,
   },
-  catChipActive: { backgroundColor: c.primary, borderColor: c.primary },
-  catChipText: { fontSize: FontSize.xs, color: c.textSecondary, fontWeight: FontWeight.medium },
-  catChipTextActive: { color: c.textInverse },
+  catChipEmoji: { fontSize: FontSize.sm },
+  catChipText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, textTransform: 'uppercase', letterSpacing: 0.4 },
   catalogGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm,
     paddingHorizontal: Spacing.base, paddingTop: Spacing.md,
