@@ -891,6 +891,88 @@ Return valid JSON only with EXACTLY the same structure and array lengths as the 
   return { ...recipe, translations: merged };
 }
 
+interface PlanCandidate {
+  id: string;
+  title: string;
+  localizedTitle: string;
+  calories: number | null;
+}
+
+// Ingredient keywords per app allergy label (recipes store no allergen tags)
+const PLAN_ALLERGY_MAP: Record<string, { keywords: string[] }> = {
+  'Peanuts':        { keywords: ['peanut'] },
+  'Tree Nuts':      { keywords: ['walnut', 'almond', 'hazelnut', 'cashew', 'pistachio'] },
+  'Shellfish':      { keywords: ['shrimp', 'prawn', 'crab', 'lobster', 'mussel'] },
+  'Fish':           { keywords: ['fish', 'salmon', 'tuna', 'anchov', 'trout'] },
+  'Eggs':           { keywords: ['egg'] },
+  'Soy':            { keywords: ['soy', 'tofu'] },
+  'Wheat / Gluten': { keywords: ['flour', 'wheat', 'bulgur', 'pasta'] },
+  'Milk / Dairy':   { keywords: ['milk', 'butter', 'cheese', 'cream', 'yogurt'] },
+  'Sesame':         { keywords: ['sesame', 'tahini'] },
+  'Mustard':        { keywords: ['mustard'] },
+};
+
+const PLAN_PROTEIN_KEYWORDS: Record<string, string[]> = {
+  'Chicken': ['chicken'], 'Beef': ['beef', 'veal'], 'Lamb': ['lamb', 'mutton'],
+  'Fish': ['fish', 'salmon', 'tuna', 'trout'], 'Seafood': ['shrimp', 'prawn', 'squid', 'mussel'],
+  'Eggs': ['egg'], 'Legumes': ['lentil', 'chickpea', 'bean'], 'Tofu': ['tofu'],
+};
+
+/**
+ * Pull DB recipes that fit the user's taste profile so the meal-plan AI can
+ * schedule real, openable recipes instead of inventing everything.
+ */
+async function fetchPlanCandidates(input: MealPlanInput, langKey: string): Promise<PlanCandidate[]> {
+  // NOTE: recipes has no allergens column — allergy filtering relies on
+  // ingredient-name keywords below
+  const { data, error } = await supabaseAdmin
+    .from('recipes')
+    .select('id, title, calories, cuisine, tags, ingredients, translations')
+    .limit(200);
+  if (error || !data) return [];
+
+  const cuisines = (input.cuisine_preference ?? '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
+  const dietary  = (input.dietary_preferences ?? []).map((d) => d.toLowerCase().replace(/[^a-z]/g, ''));
+
+  const scored = data
+    .filter((r) => {
+      const names = ((r.ingredients ?? []) as { name?: string }[]).map((i) => i.name ?? '').join(' ').toLowerCase();
+      for (const allergy of input.allergies ?? []) {
+        const rule = PLAN_ALLERGY_MAP[allergy];
+        if (!rule) continue;
+        if (rule.keywords.some((k) => names.includes(k))) return false;
+      }
+      for (const disliked of input.disliked_ingredients ?? []) {
+        const d = disliked.trim().toLowerCase();
+        if (d.length >= 3 && names.includes(d)) return false;
+      }
+      return true;
+    })
+    .map((r) => {
+      const tags = ((r.tags ?? []) as string[]).map((t) => t.toLowerCase().replace(/[^a-z]/g, ''));
+      const names = ((r.ingredients ?? []) as { name?: string }[]).map((i) => i.name ?? '').join(' ').toLowerCase();
+      let score = 0;
+      if (r.cuisine && cuisines.some((c) => r.cuisine.toLowerCase().includes(c))) score += 3;
+      for (const d of dietary) if (tags.some((t) => t.includes(d))) score += 2;
+      for (const p of input.favorite_proteins ?? []) {
+        if ((PLAN_PROTEIN_KEYWORDS[p] ?? []).some((k) => names.includes(k))) { score += 2; break; }
+      }
+      if (input.health_goal === 'Gain Muscle' && tags.includes('highprotein')) score += 1;
+      if (input.health_goal === 'Lose Weight' && r.calories != null && r.calories <= 500) score += 1;
+      return {
+        id: r.id,
+        title: r.title as string,
+        localizedTitle: ((r.translations as any)?.[langKey]?.title as string) ?? (r.title as string),
+        calories: r.calories ?? null,
+        score,
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 45);
+
+  return scored;
+}
+
 export async function generateMealPlan(
   input: MealPlanInput,
   userId: string,
@@ -936,6 +1018,21 @@ export async function generateMealPlan(
     ? '- Include lunch and dinner for each day (2 meals/day)'
     : '- Include breakfast, lunch, and dinner for each day';
 
+  // Real recipes from our DB, pre-filtered by allergies/dislikes and ranked by
+  // taste preferences — the plan should be built from these wherever possible
+  const langKey = langKeyFromName(input.language);
+  const candidates = await fetchPlanCandidates(input, langKey).catch(() => [] as PlanCandidate[]);
+  const candidatesBlock = candidates.length > 0
+    ? `\n\nAVAILABLE RECIPES FROM THE APP DATABASE (title | approx. kcal per serving):
+${candidates.map((c) => `- ${c.localizedTitle}${c.calories ? ` | ${c.calories} kcal` : ''}`).join('\n')}
+
+DATABASE RULES:
+- STRONGLY PREFER meals from this list — the user can open these recipes in the app with photos and step-by-step instructions
+- For lunch and dinner, pick from the list whenever a dish fits the requirements (aim for most of them)
+- Copy the title EXACTLY as written above (do not translate, rephrase or decorate it)
+- Only invent a meal when nothing in the list fits the slot (e.g. simple breakfasts or snacks)`
+    : '';
+
   const prompt = `You are a professional nutritionist and meal planner AI. Generate a complete 7-day meal plan.
 
 REQUIREMENTS:
@@ -947,7 +1044,7 @@ REQUIREMENTS:
 - Cuisine preference: ${cuisinePref}${extraPrefLines}
 ${mealsLine}
 - Vary the meals so there's no repetition across the week
-- Calories should be realistic and sum close to ${calorieGoal} per day${mealLangNote}${futureDaysNote}
+- Calories should be realistic and sum close to ${calorieGoal} per day${mealLangNote}${futureDaysNote}${candidatesBlock}
 
 Return ONLY valid JSON with this exact structure:
 {
@@ -1005,15 +1102,27 @@ Return ONLY valid JSON with this exact structure:
   const weekPlan: any[] = parsed.week_plan ?? [];
   const items: any[] = [];
 
+  // Link generated meals back to real DB recipes (by en or localized title)
+  // so the app can open them directly from the plan. az locale lowercasing
+  // keeps İ/ı from breaking the comparison.
+  const normTitle = (s: string) => s.normalize('NFC').trim().toLocaleLowerCase('az');
+  const byTitle = new Map<string, PlanCandidate>();
+  for (const c of candidates) {
+    byTitle.set(normTitle(c.title), c);
+    byTitle.set(normTitle(c.localizedTitle), c);
+  }
+
   for (const dayPlan of weekPlan) {
     const dayOfWeek = Number(dayPlan.day);
     if (dayOfWeek < todayDay) continue; // Skip past days
     for (const meal of dayPlan.meals ?? []) {
+      const match = byTitle.get(normTitle(String(meal.title ?? '')));
       items.push({
         day_of_week:  dayOfWeek,
         meal_type:    meal.meal_type,
         recipe_title: meal.title,
-        calories:     meal.calories ?? null,
+        recipe_id:    match?.id ?? null,
+        calories:     meal.calories ?? match?.calories ?? null,
       });
     }
   }

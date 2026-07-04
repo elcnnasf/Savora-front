@@ -477,8 +477,13 @@ export default function MealPlannerScreen() {
               activeOpacity={0.85}
               onPress={() => {
                 setMealDetailVisible(false);
-                setDiscoverFilter(selectedMeal?.recipe_title ?? '');
-                navigation.navigate('Main' as any);
+                if (selectedMeal?.recipe_id) {
+                  // AI plan linked this meal to a real DB recipe — open it directly
+                  navigation.navigate('RecipeDetail', { recipeId: selectedMeal.recipe_id });
+                } else {
+                  setDiscoverFilter(selectedMeal?.recipe_title ?? '');
+                  navigation.navigate('Main' as any);
+                }
               }}
             >
               <Search size={16} color={colors.primary} strokeWidth={2} />
