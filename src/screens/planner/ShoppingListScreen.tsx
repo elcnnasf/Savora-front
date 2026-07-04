@@ -105,6 +105,24 @@ export default function ShoppingListScreen() {
     shoppingList.clearCheckedItems().catch(() => {});
   }
 
+  function handleClearAll() {
+    Alert.alert(
+      t('shoppingList.clearAllConfirmTitle'),
+      t('shoppingList.clearAllConfirmMsg'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: () => {
+            setItems([]);
+            shoppingList.clearAllItems().catch(() => {});
+          },
+        },
+      ],
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <Header
@@ -209,6 +227,13 @@ export default function ShoppingListScreen() {
           <TouchableOpacity style={styles.clearBtn} onPress={handleClearChecked} activeOpacity={0.8}>
             <Trash2 size={15} color={colors.error} strokeWidth={2} />
             <Text style={styles.clearBtnText}>{t('shoppingList.clearChecked')} ({checkedCount})</Text>
+          </TouchableOpacity>
+        )}
+
+        {totalCount > 0 && !loading && (
+          <TouchableOpacity style={styles.clearBtn} onPress={handleClearAll} activeOpacity={0.8}>
+            <Trash2 size={15} color={colors.error} strokeWidth={2} />
+            <Text style={styles.clearBtnText}>{t('shoppingList.clearAll')} ({totalCount})</Text>
           </TouchableOpacity>
         )}
 

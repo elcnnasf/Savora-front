@@ -13,7 +13,8 @@ type PendingOp =
   | { type: 'add'; tempId: string; name: string; quantity?: string; category?: string }
   | { type: 'update'; id: string; patch: { is_checked?: boolean } }
   | { type: 'delete'; id: string }
-  | { type: 'clearChecked' };
+  | { type: 'clearChecked' }
+  | { type: 'clearAll' };
 
 export interface ListResult {
   items: ShoppingItem[];
@@ -79,6 +80,8 @@ export async function flushQueue(): Promise<boolean> {
         } else if (op.type === 'delete') {
           const id = idMap[op.id] ?? op.id;
           if (!id.startsWith(LOCAL_ID_PREFIX)) await api.deleteItem(id);
+        } else if (op.type === 'clearAll') {
+          await api.clearAll();
         } else {
           await api.clearChecked();
         }
@@ -199,5 +202,17 @@ export async function clearCheckedItems(): Promise<void> {
     await api.clearChecked();
   } catch (e) {
     if (isNetworkError(e)) await enqueue({ type: 'clearChecked' });
+  }
+}
+
+export async function clearAllItems(): Promise<void> {
+  await writeCache([]);
+  // pending adds for items that never reached the server are now pointless
+  const queue = await readQueue();
+  await writeQueue(queue.filter((op) => op.type !== 'add' && op.type !== 'update'));
+  try {
+    await api.clearAll();
+  } catch (e) {
+    if (isNetworkError(e)) await enqueue({ type: 'clearAll' });
   }
 }
