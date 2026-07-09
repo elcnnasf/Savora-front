@@ -13,6 +13,7 @@ import MealPlannerScreen from '../screens/planner/MealPlannerScreen';
 import ShoppingListScreen from '../screens/planner/ShoppingListScreen';
 import ScanScreen from '../screens/scan/ScanScreen';
 import TastePreferencesScreen from '../screens/profile/TastePreferencesScreen';
+import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import MyProgressScreen from '../screens/profile/MyProgressScreen';
 import AchievementsScreen from '../screens/profile/AchievementsScreen';
 import SettingsScreen from '../screens/profile/SettingsScreen';
@@ -20,6 +21,8 @@ import HelpSupportScreen from '../screens/profile/HelpSupportScreen';
 import PremiumScreen from '../screens/profile/PremiumScreen';
 import ManagePlanScreen from '../screens/profile/ManagePlanScreen';
 import MatchedRecipesScreen from '../screens/scan/MatchedRecipesScreen';
+import IngredientAmountsScreen from '../screens/scan/IngredientAmountsScreen';
+import CalorieCounterScreen from '../screens/nutrition/CalorieCounterScreen';
 import SignInScreen from '../screens/auth/SignInScreen';
 import SignUpScreen from '../screens/auth/SignUpScreen';
 import AdminPanelScreen from '../screens/admin/AdminPanelScreen';
@@ -98,6 +101,11 @@ export default function AppNavigator() {
             options={{ animation: 'slide_from_right' }}
           />
           <Stack.Screen
+            name="EditProfile"
+            component={EditProfileScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
             name="MyProgress"
             component={MyProgressScreen}
             options={{ animation: 'slide_from_right' }}
@@ -131,6 +139,16 @@ export default function AppNavigator() {
             name="MatchedRecipes"
             component={MatchedRecipesScreen}
             options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="IngredientAmounts"
+            component={IngredientAmountsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="CalorieCounter"
+            component={CalorieCounterScreen}
+            options={{ animation: 'slide_from_bottom' }}
           />
           {/* Auth screens accessible from within guest mode */}
           <Stack.Screen

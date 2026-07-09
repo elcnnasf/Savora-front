@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
   Modal, Pressable, TextInput, KeyboardAvoidingView, Platform,
-  ActivityIndicator,
+  ActivityIndicator, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -10,7 +10,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   ChevronLeft, Crown, Check, Sparkles, Camera,
   CalendarDays, MessageCircle, Zap, Lightbulb, Diamond, Rocket,
-  CreditCard, Lock, X, ChevronRight,
+  CreditCard, Lock, X, ChevronRight, Flame,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
@@ -20,6 +20,10 @@ import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { RootStackParamList } from '../../navigation/types';
 import { subscribe } from '../../api/auth';
+import { isPurchasesAvailable, purchasePlan, restorePurchases } from '../../services/purchaseService';
+
+const PLAY_SUBSCRIPTIONS_URL =
+  'https://play.google.com/store/account/subscriptions?package=com.savora.app';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -43,6 +47,7 @@ function getPremiumFeatures(t: (key: string) => string) {
     { icon: CalendarDays,  text: t('managePlan.premiumFeature3') },
     { icon: Camera,        text: t('managePlan.premiumFeature4') },
     { icon: MessageCircle, text: t('managePlan.premiumFeature5') },
+    { icon: Flame,         text: t('managePlan.premiumFeatureCalories') },
     { icon: Zap,           text: t('managePlan.premiumFeature6') },
     { icon: Crown,         text: t('managePlan.premiumFeature7') },
   ];
@@ -55,6 +60,7 @@ function getProFeatures(t: (key: string) => string) {
     { icon: CalendarDays,  text: t('managePlan.proFeature3') },
     { icon: Camera,        text: t('managePlan.proFeature4') },
     { icon: MessageCircle, text: t('managePlan.proFeature5') },
+    { icon: Flame,         text: t('managePlan.proFeatureCalories') },
     { icon: Zap,           text: t('managePlan.proFeature6') },
     { icon: Rocket,        text: t('managePlan.proFeature7') },
     { icon: Diamond,       text: t('managePlan.proFeature8') },
@@ -497,6 +503,7 @@ export default function ManagePlanScreen() {
   const currentPlan: PlanKey = isPro ? 'pro' : isPremium ? 'premium' : 'free';
   const [selected, setSelected]         = useState<PlanKey>(currentPlan);
   const [paymentPlan, setPaymentPlan]   = useState<{ plan: string; price: string; color: string } | null>(null);
+  const [busy, setBusy]                 = useState(false);
 
   function openPayment(plan: PlanKey) {
     const isPlanPro = plan === 'pro';
@@ -505,6 +512,57 @@ export default function ManagePlanScreen() {
       price: isPlanPro ? '12.99' : '3.99',
       color: isPlanPro ? PRO_COLOR : colors.primary,
     });
+  }
+
+  // Real Google Play purchase via RevenueCat; the simulated card sheet is the
+  // fallback for builds without a RevenueCat key (dev only — the backend
+  // refuses the trusting /auth/subscribe path in production)
+  async function handleUpgrade(planKey: 'premium' | 'pro') {
+    if (!isPurchasesAvailable()) {
+      openPayment(planKey);
+      return;
+    }
+    setBusy(true);
+    try {
+      const outcome = await purchasePlan(planKey);
+      if (outcome === 'cancelled') return;
+      // Server verifies the purchase with RevenueCat and returns the real plan
+      const res = await subscribe(planKey);
+      const serverPlan = (res.data.plan as PlanKey) ?? 'free';
+      updateSubscription(serverPlan);
+      Alert.alert(
+        t('managePlan.paymentSuccessTitle'),
+        serverPlan === 'pro' ? t('managePlan.proWelcome') : t('managePlan.premiumWelcome'),
+        [{ text: t('managePlan.start'), onPress: () => navigation.goBack() }],
+      );
+    } catch (e: any) {
+      Alert.alert(t('errors.title'), e?.message ?? t('managePlan.paymentFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRestore() {
+    if (!isPurchasesAvailable()) return;
+    setBusy(true);
+    try {
+      await restorePurchases();
+      const res = await subscribe(currentPlan === 'free' ? 'premium' : currentPlan);
+      const serverPlan = (res.data.plan as PlanKey) ?? 'free';
+      updateSubscription(serverPlan);
+      if (serverPlan === 'free') {
+        Alert.alert(t('managePlan.restorePurchases'), t('managePlan.nothingToRestore'));
+      } else {
+        Alert.alert(
+          t('managePlan.paymentSuccessTitle'),
+          serverPlan === 'pro' ? t('managePlan.proWelcome') : t('managePlan.premiumWelcome'),
+        );
+      }
+    } catch (e: any) {
+      Alert.alert(t('errors.title'), e?.message ?? t('managePlan.paymentFailed'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handlePaymentSuccess() {
@@ -534,7 +592,19 @@ export default function ManagePlanScreen() {
       t('managePlan.cancelConfirmMsg'),
       [
         { text: t('managePlan.keep'), style: 'cancel' },
-        { text: t('common.cancel'), style: 'destructive', onPress: () => Alert.alert(t('managePlan.cancelledTitle'), t('managePlan.cancelledMsg')) },
+        {
+          text: t('common.cancel'),
+          style: 'destructive',
+          onPress: () => {
+            if (isPurchasesAvailable()) {
+              // Google Play owns the subscription lifecycle — cancellation
+              // happens there; the webhook downgrades the account on expiry
+              Linking.openURL(PLAY_SUBSCRIPTIONS_URL).catch(() => {});
+            } else {
+              Alert.alert(t('managePlan.cancelledTitle'), t('managePlan.cancelledMsg'));
+            }
+          },
+        },
       ],
     );
   }
@@ -680,16 +750,16 @@ export default function ManagePlanScreen() {
 
         {/* CTA buttons */}
         {currentPlan === 'free' && selected === 'premium' && (
-          <TouchableOpacity style={styles.upgradeBtn} onPress={() => openPayment('premium')} activeOpacity={0.85}>
-            <Crown size={18} color="#fff" strokeWidth={2} />
+          <TouchableOpacity style={[styles.upgradeBtn, busy && { opacity: 0.6 }]} onPress={() => handleUpgrade('premium')} disabled={busy} activeOpacity={0.85}>
+            {busy ? <ActivityIndicator size="small" color="#fff" /> : <Crown size={18} color="#fff" strokeWidth={2} />}
             <Text style={styles.upgradeBtnText}>{t('managePlan.switchToPremiumLabel')} — 3.99 AZN{t('managePlan.perMonthShort')}</Text>
             <ChevronRight size={16} color="#fff" strokeWidth={2.5} />
           </TouchableOpacity>
         )}
 
         {(currentPlan === 'free' || currentPlan === 'premium') && selected === 'pro' && (
-          <TouchableOpacity style={[styles.upgradeBtn, { backgroundColor: PRO_COLOR }]} onPress={() => openPayment('pro')} activeOpacity={0.85}>
-            <Diamond size={18} color="#fff" strokeWidth={2} />
+          <TouchableOpacity style={[styles.upgradeBtn, { backgroundColor: PRO_COLOR }, busy && { opacity: 0.6 }]} onPress={() => handleUpgrade('pro')} disabled={busy} activeOpacity={0.85}>
+            {busy ? <ActivityIndicator size="small" color="#fff" /> : <Diamond size={18} color="#fff" strokeWidth={2} />}
             <Text style={styles.upgradeBtnText}>{t('managePlan.switchToProLabel')} — 12.99 AZN{t('managePlan.perMonthShort')}</Text>
             <ChevronRight size={16} color="#fff" strokeWidth={2.5} />
           </TouchableOpacity>
@@ -711,6 +781,14 @@ export default function ManagePlanScreen() {
               <Text style={styles.cancelBtnText}>{t('managePlan.cancelSubscription')}</Text>
             </TouchableOpacity>
           </View>
+        )}
+
+        {isPurchasesAvailable() && (
+          <TouchableOpacity onPress={handleRestore} disabled={busy} activeOpacity={0.7} style={{ alignSelf: 'center', paddingVertical: Spacing.sm }}>
+            <Text style={{ color: colors.primary, fontSize: FontSize.sm, fontWeight: FontWeight.semibold }}>
+              {t('managePlan.restorePurchases')}
+            </Text>
+          </TouchableOpacity>
         )}
 
         <Text style={styles.disclaimer}>

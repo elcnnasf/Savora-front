@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView,
-  Modal, TextInput, KeyboardAvoidingView, Platform, Pressable,
+  Modal, TextInput, Platform, Pressable, Keyboard,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { X, ChevronLeft, ChevronRight, CheckCircle, Play, Pause, Sparkles, Send } from 'lucide-react-native';
+import { X, ChevronLeft, ChevronRight, CheckCircle, Play, Pause, Sparkles, Send, Star } from 'lucide-react-native';
 import { Spacing, BorderRadius } from '../../constants/spacing';
 import { AppColors } from '../../constants/colors';
 import { FontSize, FontWeight } from '../../constants/typography';
@@ -15,44 +15,24 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useCookingProgressStore } from '../../store/cookingProgressStore';
+import { useUserStore } from '../../store/userStore';
+import { useAuthStore } from '../../store/authStore';
+import { sendChatMessage, ChatMessage } from '../../api/ai';
+import { rateRecipe } from '../../api/recipes';
 
 type Route = RouteProp<RootStackParamList, 'CookingMode'>;
 const { width } = Dimensions.get('window');
 
-const AI_ANSWERS: { keywords: string[]; answerKey: string }[] = [
-  {
-    keywords: ['yanır', 'burn', 'yandı', 'smoke', 'tüstü', 'горит', 'yanıyor', 'yanıyorsa', 'burning'],
-    answerKey: 'cooking.aiAnswerBurning',
-  },
-  {
-    keywords: ['səhv', 'wrong', 'mistake', 'redo', 'yenidən', 'hata', 'ошибка', 'hata yaptım'],
-    answerKey: 'cooking.aiAnswerMistake',
-  },
-  {
-    keywords: ['temperature', 'heat', 'istilik', 'temp', 'dərəcə', 'sıcaklık', 'температура', 'ısı'],
-    answerKey: 'cooking.aiAnswerTemperature',
-  },
-  {
-    keywords: ['substitute', 'replace', 'əvəz', 'yoxdur', 'değişim', 'замена', 'alternatif'],
-    answerKey: 'cooking.aiAnswerSubstitute',
-  },
-  {
-    keywords: ['time', 'vaxt', 'süre', 'время', 'how long', 'ne kadar', 'neçə'],
-    answerKey: 'cooking.aiAnswerTime',
-  },
-];
-
-function getAIAnswer(question: string, translate: (key: string) => string): string {
-  const lower = question.toLowerCase();
-  const match = AI_ANSWERS.find((a) => a.keywords.some((k) => lower.includes(k)));
-  return match ? translate(match.answerKey) : translate('cooking.aiAnswerDefault');
-}
+type ChatBubble = { id: string; role: 'user' | 'ai'; text: string };
 
 export default function CookingModeScreen() {
   const navigation = useNavigation();
   const route = useRoute<Route>();
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const language = useUserStore((s) => s.language);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const styles = makeStyles(colors);
 
   const fallbackRecipe = RECIPES.find((r) => r.id === route.params.recipeId) ?? RECIPES[0];
@@ -61,18 +41,23 @@ export default function CookingModeScreen() {
   const recipe     = { name: recipeName, steps };
 
   const recipeId = route.params.recipeId;
-  const { setProgress, clearProgress } = useCookingProgressStore();
+  const setProgress = useCookingProgressStore((s) => s.setProgress);
 
   const [currentStep, setCurrentStep] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState((recipe.steps[0]?.duration ?? 5) * 60);
   const [completed, setCompleted]     = useState(false);
+  const [rating, setRating]           = useState(0);
+  const [rated, setRated]             = useState(false);
 
-  const [aiVisible,  setAiVisible]  = useState(false);
-  const [aiQuestion, setAiQuestion] = useState('');
-  const [aiAnswer,   setAiAnswer]   = useState<string | null>(null);
-  const [aiLoading,  setAiLoading]  = useState(false);
+  const [aiVisible,  setAiVisible]   = useState(false);
+  const [aiInput,    setAiInput]     = useState('');
+  const [aiSending,  setAiSending]   = useState(false);
+  const [messages,   setMessages]    = useState<ChatBubble[]>([]);
+  const [kbHeight,   setKbHeight]    = useState(0);
 
+  const historyRef  = useRef<ChatMessage[]>([]);
+  const chatScrollRef = useRef<ScrollView>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const step       = recipe.steps[currentStep];
@@ -107,24 +92,92 @@ export default function CookingModeScreen() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [timerActive]);
 
+  // Track keyboard height ourselves so the sheet input never hides behind the
+  // keyboard — reliable on both iOS and Android inside a Modal.
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const sub1 = Keyboard.addListener(showEvt, (e) => setKbHeight(e.endCoordinates?.height ?? 0));
+    const sub2 = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { sub1.remove(); sub2.remove(); };
+  }, []);
+
   function goNext() {
     if (currentStep < totalSteps - 1) {
       setCurrentStep((s) => s + 1);
     } else {
-      if (recipeId) clearProgress(recipeId);
+      // Mark 100% (don't clear) so it drops out of "Continue" and the daily
+      // recommendation rotates away from a finished recipe.
+      if (recipeId) setProgress(recipeId, 100);
       setCompleted(true);
     }
   }
 
   function goPrev() { if (currentStep > 0) setCurrentStep((s) => s - 1); }
 
-  function openAI() { setAiQuestion(''); setAiAnswer(null); setAiVisible(true); }
+  // #12 — rate the recipe right after finishing. Best-effort: silently ignores
+  // failures (bundled mock recipes / offline) so the flow is never blocked.
+  async function handleRate(star: number) {
+    setRating(star);
+    if (!recipeId) return;
+    try {
+      await rateRecipe(recipeId, star);
+      setRated(true);
+    } catch {
+      setRated(true); // still acknowledge the tap
+    }
+  }
 
-  function sendQuestion() {
-    if (!aiQuestion.trim()) return;
-    setAiLoading(true);
-    setAiAnswer(null);
-    setTimeout(() => { setAiAnswer(getAIAnswer(aiQuestion, t)); setAiLoading(false); }, 1100);
+  function openAI() {
+    setAiInput('');
+    setMessages([]);
+    historyRef.current = [];
+    setAiVisible(true);
+  }
+
+  function closeAI() {
+    Keyboard.dismiss();
+    setAiVisible(false);
+  }
+
+  // Compact, focused context so the assistant answers for THIS step.
+  function buildContext(): string {
+    const prev = currentStep > 0 ? recipe.steps[currentStep - 1]?.instruction : undefined;
+    const next = currentStep < totalSteps - 1 ? recipe.steps[currentStep + 1]?.instruction : undefined;
+    return [
+      `Recipe: ${recipe.name}`,
+      `Step ${currentStep + 1} of ${totalSteps} (current): ${step?.instruction ?? ''}`,
+      prev ? `Previous step: ${prev}` : null,
+      next ? `Next step: ${next}` : null,
+    ].filter(Boolean).join('\n');
+  }
+
+  async function sendQuestion(preset?: string) {
+    const text = (preset ?? aiInput).trim();
+    if (!text || aiSending) return;
+
+    Keyboard.dismiss();
+    const userMsg: ChatBubble = { id: `u${Date.now()}`, role: 'user', text };
+    setMessages((prev) => [...prev, userMsg]);
+    setAiInput('');
+    setAiSending(true);
+    setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 80);
+
+    try {
+      const res = await sendChatMessage(text, historyRef.current, language, buildContext());
+      const reply = res.data.reply;
+      historyRef.current = [
+        ...historyRef.current,
+        { role: 'user' as const,      content: text },
+        { role: 'assistant' as const, content: reply },
+      ].slice(-20);
+      setMessages((prev) => [...prev, { id: `a${Date.now()}`, role: 'ai', text: reply }]);
+    } catch {
+      setMessages((prev) => [...prev, { id: `e${Date.now()}`, role: 'ai', text: t('cooking.aiError') }]);
+    } finally {
+      setAiSending(false);
+      setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 80);
+    }
   }
 
   const minutes = Math.floor(secondsLeft / 60);
@@ -151,6 +204,32 @@ export default function CookingModeScreen() {
           <Text style={styles.completedSubtitle}>
             {recipe.name}{'\n'}{t('cooking.enjoyYourMeal')}
           </Text>
+
+          {isAuthenticated && (
+            <View style={styles.ratingCard}>
+              <Text style={styles.ratingTitle}>
+                {rated ? t('cooking.thanksRating') : t('cooking.rateThisRecipe')}
+              </Text>
+              <View style={styles.starsRow}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <TouchableOpacity
+                    key={s}
+                    onPress={() => handleRate(s)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  >
+                    <Star
+                      size={38}
+                      color={colors.warning}
+                      fill={s <= rating ? colors.warning : 'transparent'}
+                      strokeWidth={1.5}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
           <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
             <Text style={styles.doneBtnText}>{t('cooking.backToRecipe')}</Text>
           </TouchableOpacity>
@@ -247,97 +326,131 @@ export default function CookingModeScreen() {
       </View>
 
       {/* AI Chat Modal */}
-      <Modal visible={aiVisible} transparent animationType="slide" onRequestClose={() => setAiVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setAiVisible(false)}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalKAV}>
-            <Pressable style={styles.modalSheet} onPress={() => {}}>
-              <View style={styles.sheetHandle} />
+      <Modal visible={aiVisible} transparent animationType="slide" statusBarTranslucent onRequestClose={closeAI}>
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.modalBackdrop} onPress={closeAI} />
 
-              <View style={styles.sheetHeader}>
-                <View style={styles.sheetIconWrap}>
-                  <Sparkles size={18} color={colors.primary} strokeWidth={2} />
-                </View>
-                <View style={styles.sheetHeaderText}>
-                  <Text style={styles.sheetTitle}>{t('cooking.askAI')}</Text>
-                  <Text style={styles.sheetSubtitle} numberOfLines={1}>
-                    {t('cooking.step')} {currentStep + 1} · {recipe.name}
-                  </Text>
-                </View>
-                <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setAiVisible(false)} activeOpacity={0.7}>
-                  <X size={18} color={colors.textSecondary} strokeWidth={2.5} />
-                </TouchableOpacity>
+          <View
+            style={[
+              styles.modalSheet,
+              { paddingBottom: (kbHeight > 0 ? kbHeight : insets.bottom) + Spacing.sm },
+            ]}
+          >
+            <View style={styles.sheetHandle} />
+
+            <View style={styles.sheetHeader}>
+              <View style={styles.sheetIconWrap}>
+                <Sparkles size={18} color={colors.primary} strokeWidth={2} />
               </View>
-
-              {/* Input row */}
-              <View style={styles.questionRow}>
-                <TextInput
-                  style={styles.questionInput}
-                  value={aiQuestion}
-                  onChangeText={setAiQuestion}
-                  placeholder={t('cooking.askPlaceholder')}
-                  placeholderTextColor={colors.textMuted}
-                  multiline
-                  maxLength={200}
-                  returnKeyType="send"
-                  onSubmitEditing={sendQuestion}
-                  blurOnSubmit
-                />
-                <TouchableOpacity
-                  style={[styles.sendBtn, (!aiQuestion.trim() || aiLoading) && styles.sendBtnDisabled]}
-                  onPress={sendQuestion}
-                  activeOpacity={0.8}
-                  disabled={!aiQuestion.trim() || aiLoading}
-                >
-                  <Send size={18} color={colors.textInverse} strokeWidth={2} />
-                </TouchableOpacity>
+              <View style={styles.sheetHeaderText}>
+                <Text style={styles.sheetTitle}>{t('cooking.savoraAI')}</Text>
+                <Text style={styles.sheetSubtitle} numberOfLines={1}>
+                  {t('cooking.step')} {currentStep + 1} · {recipe.name}
+                </Text>
               </View>
+              <TouchableOpacity style={styles.sheetCloseBtn} onPress={closeAI} activeOpacity={0.7}>
+                <X size={18} color={colors.textSecondary} strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
 
-              {/* Quick chips */}
-              {!aiAnswer && !aiLoading && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chipsRow}
-                >
-                  {CHIPS.map((chip) => (
-                    <TouchableOpacity
-                      key={chip}
-                      style={styles.chip}
-                      onPress={() => setAiQuestion(chip)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.chipText}>{chip}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              )}
-
-              {/* Loading dots */}
-              {aiLoading && (
-                <View style={styles.loadingRow}>
-                  <View style={styles.aiDot} />
-                  <View style={[styles.aiDot, { opacity: 0.6 }]} />
-                  <View style={[styles.aiDot, { opacity: 0.3 }]} />
-                </View>
-              )}
-
-              {/* Answer */}
-              {aiAnswer && (
-                <View style={styles.answerBox}>
-                  <View style={styles.answerHeader}>
-                    <View style={styles.aiAvatarSmall}>
-                      <Sparkles size={12} color={colors.primary} strokeWidth={2} />
-                    </View>
-                    <Text style={styles.answerLabel}>{t('cooking.savoraAI')}</Text>
+            {/* Conversation */}
+            <ScrollView
+              ref={chatScrollRef}
+              style={styles.chatScroll}
+              contentContainerStyle={styles.chatScrollInner}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {messages.length === 0 && !aiSending && (
+                <View style={styles.introRow}>
+                  <View style={styles.aiAvatar}>
+                    <Sparkles size={13} color={colors.primary} strokeWidth={2} />
                   </View>
-                  <Text style={styles.answerText}>{aiAnswer}</Text>
+                  <View style={[styles.bubble, styles.bubbleAi, styles.introBubble]}>
+                    <Text style={styles.bubbleAiText}>{t('cooking.aiHelpIntro')}</Text>
+                  </View>
                 </View>
               )}
 
-              <View style={{ height: Spacing.base }} />
-            </Pressable>
-          </KeyboardAvoidingView>
-        </Pressable>
+              {messages.map((m) =>
+                m.role === 'user' ? (
+                  <View key={m.id} style={styles.userRow}>
+                    <View style={[styles.bubble, styles.bubbleUser]}>
+                      <Text style={styles.bubbleUserText}>{m.text}</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View key={m.id} style={styles.aiRow}>
+                    <View style={styles.aiAvatar}>
+                      <Sparkles size={13} color={colors.primary} strokeWidth={2} />
+                    </View>
+                    <View style={[styles.bubble, styles.bubbleAi]}>
+                      <Text style={styles.bubbleAiText}>{m.text}</Text>
+                    </View>
+                  </View>
+                ),
+              )}
+
+              {aiSending && (
+                <View style={styles.aiRow}>
+                  <View style={styles.aiAvatar}>
+                    <Sparkles size={13} color={colors.primary} strokeWidth={2} />
+                  </View>
+                  <View style={[styles.bubble, styles.bubbleAi, styles.loadingBubble]}>
+                    <View style={styles.aiDot} />
+                    <View style={[styles.aiDot, { opacity: 0.6 }]} />
+                    <View style={[styles.aiDot, { opacity: 0.3 }]} />
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Suggestion chips — only before the conversation starts */}
+            {messages.length === 0 && !aiSending && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.chipsRow}
+              >
+                {CHIPS.map((chip) => (
+                  <TouchableOpacity
+                    key={chip}
+                    style={styles.chip}
+                    onPress={() => sendQuestion(chip)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.chipText} numberOfLines={1}>{chip}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* Input row */}
+            <View style={styles.questionRow}>
+              <TextInput
+                style={styles.questionInput}
+                value={aiInput}
+                onChangeText={setAiInput}
+                placeholder={t('cooking.askPlaceholder')}
+                placeholderTextColor={colors.textMuted}
+                multiline
+                maxLength={200}
+                returnKeyType="send"
+                onSubmitEditing={() => sendQuestion()}
+                blurOnSubmit={false}
+              />
+              <TouchableOpacity
+                style={[styles.sendBtn, (!aiInput.trim() || aiSending) && styles.sendBtnDisabled]}
+                onPress={() => sendQuestion()}
+                activeOpacity={0.8}
+                disabled={!aiInput.trim() || aiSending}
+              >
+                <Send size={18} color={colors.textInverse} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -441,20 +554,32 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   },
   doneBtnText: { color: c.textInverse, fontSize: FontSize.md, fontWeight: FontWeight.semibold },
 
-  // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalKAV: { justifyContent: 'flex-end' },
+  ratingCard: {
+    width: '100%', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: c.card, borderRadius: BorderRadius.xxl,
+    paddingVertical: Spacing.xl, paddingHorizontal: Spacing.lg,
+    borderWidth: 1, borderColor: c.borderLight,
+  },
+  ratingTitle: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: c.text, textAlign: 'center' },
+  starsRow: { flexDirection: 'row', gap: Spacing.sm },
+
+  // ── AI Modal ──────────────────────────────────────────────
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   modalSheet: {
     backgroundColor: c.background,
     borderTopLeftRadius: BorderRadius.xxl, borderTopRightRadius: BorderRadius.xxl,
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.sm, minHeight: 280,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.sm,
+    maxHeight: '82%',
   },
   sheetHandle: {
     width: 40, height: 4, borderRadius: 2,
-    backgroundColor: c.border, alignSelf: 'center', marginBottom: Spacing.md,
+    backgroundColor: c.border, alignSelf: 'center', marginBottom: Spacing.sm,
   },
   sheetHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingBottom: Spacing.sm, marginBottom: Spacing.xs,
+    borderBottomWidth: 1, borderBottomColor: c.borderLight,
   },
   sheetIconWrap: {
     width: 38, height: 38, borderRadius: 19,
@@ -468,47 +593,67 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
     backgroundColor: c.borderLight, alignItems: 'center', justifyContent: 'center',
   },
 
-  questionRow: {
-    flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-end', marginBottom: Spacing.md,
-  },
-  questionInput: {
-    flex: 1, backgroundColor: c.surface, borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.md,
-    fontSize: FontSize.base, color: c.text,
-    borderWidth: 1.5, borderColor: c.border, maxHeight: 100,
-  },
-  sendBtn: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  sendBtnDisabled: { backgroundColor: c.textMuted },
+  // Conversation
+  chatScroll: { flexGrow: 0, maxHeight: 320 },
+  chatScrollInner: { paddingVertical: Spacing.md, gap: Spacing.md },
 
-  chipsRow: { flexDirection: 'row', gap: Spacing.sm, paddingBottom: Spacing.md, paddingRight: Spacing.base },
-  chip: {
-    backgroundColor: c.surface, borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+  introRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-end' },
+  aiRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-end', maxWidth: '92%' },
+  userRow: { alignItems: 'flex-end' },
+
+  aiAvatar: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: c.primarySurface, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 2,
+  },
+
+  bubble: {
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2,
+    borderRadius: BorderRadius.lg, maxWidth: width * 0.72,
+  },
+  bubbleAi: {
+    backgroundColor: c.surface,
     borderWidth: 1, borderColor: c.border,
-    alignItems: 'center', justifyContent: 'center',
-    minHeight: 36,
+    borderBottomLeftRadius: 6,
+  },
+  introBubble: { backgroundColor: c.primarySurface, borderColor: c.primary + '25' },
+  bubbleAiText: { fontSize: FontSize.base, color: c.text, lineHeight: FontSize.base * 1.5 },
+  bubbleUser: {
+    backgroundColor: c.primary,
+    borderBottomRightRadius: 6,
+  },
+  bubbleUserText: { fontSize: FontSize.base, color: c.textInverse, lineHeight: FontSize.base * 1.45 },
+
+  loadingBubble: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingVertical: Spacing.md },
+  aiDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: c.primary },
+
+  // Suggestion chips — compact
+  chipsRow: { flexDirection: 'row', gap: Spacing.sm, paddingBottom: Spacing.sm, paddingRight: Spacing.base },
+  chip: {
+    backgroundColor: c.primarySurface, borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.md, paddingVertical: 7,
+    borderWidth: 1, borderColor: c.primary + '30',
+    justifyContent: 'center',
   },
   chipText: {
-    fontSize: FontSize.sm, color: c.text, fontWeight: FontWeight.medium,
+    fontSize: FontSize.sm, color: c.primary, fontWeight: FontWeight.semibold,
     includeFontPadding: false,
   },
 
-  loadingRow: { flexDirection: 'row', gap: 6, paddingVertical: Spacing.md, paddingLeft: Spacing.sm },
-  aiDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.primary },
-
-  answerBox: {
-    backgroundColor: c.primarySurface, borderRadius: BorderRadius.lg,
-    padding: Spacing.md, marginBottom: Spacing.sm,
-    borderWidth: 1, borderColor: c.primary + '30',
+  // Input
+  questionRow: {
+    flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-end',
+    paddingTop: Spacing.sm, borderTopWidth: 1, borderTopColor: c.borderLight,
   },
-  answerHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.sm },
-  aiAvatarSmall: {
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: c.background, alignItems: 'center', justifyContent: 'center',
+  questionInput: {
+    flex: 1, backgroundColor: c.surface, borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.md, paddingTop: Spacing.sm + 2, paddingBottom: Spacing.sm + 2,
+    fontSize: FontSize.base, color: c.text,
+    borderWidth: 1.5, borderColor: c.border, maxHeight: 100, minHeight: 44,
   },
-  answerLabel: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: c.primary },
-  answerText: { fontSize: FontSize.base, color: c.text, lineHeight: FontSize.base * 1.55 },
+  sendBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  sendBtnDisabled: { backgroundColor: c.textMuted },
 });

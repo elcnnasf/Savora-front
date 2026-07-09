@@ -41,7 +41,7 @@ export type RootStackParamList = {
   Auth: undefined;
   OnboardingIntro: undefined;
   Main: undefined;
-  RecipeDetail: { recipeId?: string; recipe?: ApiRecipe };
+  RecipeDetail: { recipeId?: string; recipe?: ApiRecipe; haveIngredients?: string[] };
   AIRecipe: { ingredients?: string[]; initialDescription?: string } | undefined;
   CookingMode: {
     recipeId: string;
@@ -51,8 +51,11 @@ export type RootStackParamList = {
   MealPlanner: undefined;
   ShoppingList: undefined;
   Scan: undefined;
+  IngredientAmounts: undefined;
+  CalorieCounter: undefined;
   MatchedRecipes: { ingredients: string[] };
   TastePreferences: undefined;
+  EditProfile: undefined;
   MyProgress: undefined;
   Achievements: undefined;
   Settings: undefined;

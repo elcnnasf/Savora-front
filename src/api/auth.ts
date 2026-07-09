@@ -75,6 +75,17 @@ export function logout() {
   return apiFetch('/auth/logout', { method: 'POST' });
 }
 
+export function updateProfile(patch: { name?: string; avatar_url?: string | null }) {
+  return apiFetch<{ success: boolean; data: ApiUser }>('/auth/me', {
+    method: 'PATCH',
+    body: patch,
+  });
+}
+
+export function deleteAccount() {
+  return apiFetch<{ success: boolean }>('/auth/me', { method: 'DELETE' });
+}
+
 export function googleSignIn(idToken: string) {
   return apiFetch<{ success: boolean; data: AuthData }>('/auth/google', {
     method: 'POST',

@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, Sparkles, Clock, ChefHat, Flame } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Sparkles, Clock, ChefHat, Flame } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
@@ -74,13 +74,21 @@ export default function MatchedRecipesScreen() {
     }
   }
 
+  // #10 — if even the best DB recipe uses <70% of what the user has, lead with AI
+  const bestMatch = recipes.length > 0 ? Math.max(...recipes.map((r) => r.match_percent)) : 0;
+  const lowMatch  = !loading && !error && bestMatch < 70;
+
   function handleGenerateAI() {
     // AIRecipe's ingredients mode shows 5 dish suggestions before generating
     navigation.navigate('AIRecipe', { ingredients });
   }
 
   function openRecipe(item: MatchedRecipe) {
-    navigation.navigate('RecipeDetail', { recipeId: item.id });
+    // Pass the scanned ingredients so RecipeDetail can flag the missing ones (#10)
+    navigation.navigate('RecipeDetail', {
+      recipeId: item.id,
+      haveIngredients: ingredients.map((i) => i.toLowerCase().trim()),
+    });
   }
 
   const renderItem = ({ item }: { item: MatchedRecipe }) => (
@@ -166,6 +174,21 @@ export default function MatchedRecipesScreen() {
           renderItem={renderItem}
           contentContainerStyle={dynStyles.list}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            // #10 — weak DB match (<70%): surface "create with AI" at the very top
+            lowMatch ? (
+              <TouchableOpacity style={dynStyles.aiHero} onPress={handleGenerateAI} activeOpacity={0.9}>
+                <View style={dynStyles.aiHeroIcon}>
+                  <Sparkles size={22} color={colors.textInverse} strokeWidth={2.2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={dynStyles.aiHeroTitle}>{t('matchedRecipes.lowMatchTitle')}</Text>
+                  <Text style={dynStyles.aiHeroDesc}>{t('matchedRecipes.lowMatchDesc')}</Text>
+                </View>
+                <ChevronRight size={20} color={colors.textInverse} strokeWidth={2.5} />
+              </TouchableOpacity>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={dynStyles.emptyCard}>
               <ChefHat size={40} color={colors.textMuted} strokeWidth={1.5} />
@@ -174,14 +197,16 @@ export default function MatchedRecipesScreen() {
             </View>
           }
           ListFooterComponent={
-            <TouchableOpacity
-              style={dynStyles.aiBtn}
-              onPress={handleGenerateAI}
-              activeOpacity={0.85}
-            >
-              <Sparkles size={18} color={colors.textInverse} strokeWidth={2.5} />
-              <Text style={dynStyles.aiBtnText}>{t('matchedRecipes.generateNew')}</Text>
-            </TouchableOpacity>
+            !lowMatch ? (
+              <TouchableOpacity
+                style={dynStyles.aiBtn}
+                onPress={handleGenerateAI}
+                activeOpacity={0.85}
+              >
+                <Sparkles size={18} color={colors.textInverse} strokeWidth={2.5} />
+                <Text style={dynStyles.aiBtnText}>{t('matchedRecipes.generateNew')}</Text>
+              </TouchableOpacity>
+            ) : null
           }
         />
       )}
@@ -248,6 +273,18 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   },
   emptyTitle:    { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: c.text },
   emptySubtitle: { fontSize: FontSize.sm, color: c.textMuted, textAlign: 'center', lineHeight: 20 },
+
+  aiHero: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: c.primary, borderRadius: BorderRadius.xl,
+    padding: Spacing.base, marginBottom: Spacing.md, ...Shadow.md,
+  },
+  aiHeroIcon: {
+    width: 44, height: 44, borderRadius: BorderRadius.lg,
+    backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center',
+  },
+  aiHeroTitle: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: c.textInverse },
+  aiHeroDesc:  { fontSize: FontSize.xs, color: 'rgba(255,255,255,0.85)', marginTop: 2, lineHeight: 16 },
 
   aiBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,

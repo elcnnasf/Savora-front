@@ -1,5 +1,6 @@
-const { getDefaultConfig } = require('expo/metro-config');
+// Sentry's wrapper extends Expo's default config with source-map upload hooks
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 
-const config = getDefaultConfig(__dirname);
+const config = getSentryExpoConfig(__dirname);
 
 module.exports = config;

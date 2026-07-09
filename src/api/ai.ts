@@ -51,10 +51,15 @@ interface GenerateRecipeResponse {
   data: ApiRecipe;
 }
 
-export function sendChatMessage(message: string, history: ChatMessage[], language?: string) {
+export function sendChatMessage(
+  message: string,
+  history: ChatMessage[],
+  language?: string,
+  context?: string,
+) {
   return apiFetch<ChatResponse>('/ai/chat', {
     method: 'POST',
-    body: { message, history, language },
+    body: { message, history, language, context },
   });
 }
 
@@ -110,11 +115,52 @@ export function suggestRecipes(params: { query: string; language?: string }) {
   });
 }
 
+export interface CalorieAnalysisItem {
+  name: string;
+  amount: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+export interface CalorieAnalysis {
+  food_detected: boolean;
+  dish_name?: string;
+  portion?: string;
+  items?: CalorieAnalysisItem[];
+  total?: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    fiber: number;
+    sugar: number;
+    sodium: number;
+  };
+  confidence?: 'high' | 'medium' | 'low';
+  note?: string;
+}
+
+/** Premium/Pro only — photo mode (image_base64) or text mode (food_name + portion). */
+export function analyzeCalories(params: {
+  image_base64?: string;
+  food_name?: string;
+  portion?: string;
+  language?: string;
+}) {
+  return apiFetch<{ success: boolean; data: CalorieAnalysis }>('/ai/analyze-calories', {
+    method: 'POST',
+    body: params,
+  });
+}
+
 export function generateRecipe(params: {
   description?: string;
   ingredients?: string[];
   language?: string;
   preferences?: AiPreferences;
+  notes?: string;
 }) {
   return apiFetch<GenerateRecipeResponse>('/ai/generate-recipe', {
     method: 'POST',

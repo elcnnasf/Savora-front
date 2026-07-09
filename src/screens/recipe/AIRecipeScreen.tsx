@@ -16,7 +16,6 @@ import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
 import { Header } from '../../components/ui/Header';
 import { Button } from '../../components/ui/Button';
-import { Chip } from '../../components/ui/Chip';
 import { generateRecipe, suggestRecipes, RecipeSuggestion, buildAiPreferences } from '../../api/ai';
 import { RootStackParamList } from '../../navigation/types';
 import { useUserStore } from '../../store/userStore';
@@ -27,9 +26,6 @@ type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AIRecipe'>;
 
 type Phase = 'input' | 'suggesting' | 'suggestions' | 'generating';
-
-const DIETARY = ['High Protein', 'Low Carb', 'Vegan', 'Keto', 'Quick', 'Vegetarian'];
-const TIMES   = [15, 30, 45, 60];
 
 const LANG_CODE_MAP: Record<string, string> = {
   en: 'English', az: 'Azerbaijani', ru: 'Russian', tr: 'Turkish',
@@ -58,9 +54,8 @@ export default function AIRecipeScreen() {
 
   const [query,               setQuery]               = useState(initialDescription ?? '');
   const [scannedIngredients,  setScannedIngredients]  = useState<string[]>(passedIngredients ?? []);
-  const [dietary,             setDietary]             = useState<string[]>(preferences.dietary ?? []);
-  const [maxTime,             setMaxTime]             = useState(30);
   const [servings,            setServings]            = useState(preferences.servingSize ?? 2);
+  const [notes,               setNotes]               = useState('');
 
   const [phase,               setPhase]               = useState<Phase>('input');
   const [suggestions,         setSuggestions]         = useState<RecipeSuggestion[]>([]);
@@ -110,12 +105,6 @@ export default function AIRecipeScreen() {
     }
   }
 
-  function toggleDietary(item: string) {
-    setDietary((prev) =>
-      prev.includes(item) ? prev.filter((d) => d !== item) : [...prev, item],
-    );
-  }
-
   async function getSuggestions() {
     if (!query.trim()) {
       Alert.alert(t('ai.descRequired') || 'Required', t('ai.descRequiredMsg') || 'Please describe what you want to cook.');
@@ -142,11 +131,11 @@ export default function AIRecipeScreen() {
   async function directGenerate() {
     setPhase('generating');
     try {
-      const dietary_restrictions = dietary.length > 0 ? dietary : preferences.dietary.length > 0 ? preferences.dietary : undefined;
       const res = await generateRecipe({
         ingredients: scannedIngredients,
         language,
-        preferences: { ...buildAiPreferences(preferences), dietary_restrictions, max_cook_time: maxTime, servings },
+        notes: notes.trim() || undefined,
+        preferences: { ...buildAiPreferences(preferences), servings },
       });
       navigation.replace('RecipeDetail', { recipe: res.data });
     } catch (err: any) {
@@ -160,15 +149,13 @@ export default function AIRecipeScreen() {
     const nameForGen = selected.nameEn || selected.name;
     fadeTransition(() => setPhase('generating'));
     try {
-      const dietary_restrictions = dietary.length > 0 ? dietary : preferences.dietary.length > 0 ? preferences.dietary : undefined;
       const res = await generateRecipe({
         description: nameForGen,
         language,
+        notes: notes.trim() || undefined,
         preferences: {
           ...buildAiPreferences(preferences),
-          dietary_restrictions,
           cuisine: (selected.cuisine || preferences.cuisines[0]) ?? undefined,
-          max_cook_time: maxTime,
           servings,
         },
       });
@@ -347,20 +334,6 @@ export default function AIRecipeScreen() {
             </View>
           )}
 
-          <Text style={styles.sectionLabel}>{t('ai.dietaryPrefs') || 'Dietary Preferences'}</Text>
-          <View style={styles.chipGrid}>
-            {DIETARY.map((item) => (
-              <Chip key={item} label={item} selected={dietary.includes(item)} onPress={() => toggleDietary(item)} />
-            ))}
-          </View>
-
-          <Text style={styles.sectionLabel}>{t('ai.maxTime') || 'Max Cooking Time'}</Text>
-          <View style={styles.chipGrid}>
-            {TIMES.map((tm) => (
-              <Chip key={tm} label={tm === 60 ? '60+ min' : `${tm} min`} selected={maxTime === tm} onPress={() => setMaxTime(tm)} />
-            ))}
-          </View>
-
           <Text style={styles.sectionLabel}>{t('recipe.servings')}</Text>
           <View style={styles.stepperRow}>
             <TouchableOpacity style={styles.stepperBtn} onPress={() => setServings((s) => Math.max(1, s - 1))} activeOpacity={0.7}>
@@ -370,6 +343,21 @@ export default function AIRecipeScreen() {
             <TouchableOpacity style={styles.stepperBtn} onPress={() => setServings((s) => Math.min(10, s + 1))} activeOpacity={0.7}>
               <Plus size={16} color={colors.text} strokeWidth={2.5} />
             </TouchableOpacity>
+          </View>
+
+          <Text style={styles.sectionLabel}>{t('ai.notesLabel')}</Text>
+          <View style={styles.inputBox}>
+            <TextInput
+              style={styles.input}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder={t('ai.notesPlaceholder')}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              maxLength={500}
+            />
           </View>
 
           <View style={{ height: Spacing.xl }} />

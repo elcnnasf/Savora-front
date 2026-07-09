@@ -107,7 +107,22 @@ export async function apiFetch<T = unknown>(
     throw new Error('Sessiyanız başa çatdı. Yenidən daxil olun.');
   }
 
-  const json = await res.json();
+  const json = await parseJsonOrThrow(res);
   if (!res.ok) throw new Error(json?.error ?? `Request failed: ${res.status}`);
   return json as T;
+}
+
+// Servers (and proxies / captive portals) sometimes reply with an HTML error page
+// instead of JSON. Calling res.json() on that throws a cryptic
+// "JSON Parse error: Unexpected character: <". Detect it and surface something useful.
+async function parseJsonOrThrow(res: Response): Promise<any> {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(
+      `Serverdən gözlənilməz cavab alındı (${res.status}). ` +
+      `API ünvanını yoxlayın: ${API_URL}`,
+    );
+  }
 }

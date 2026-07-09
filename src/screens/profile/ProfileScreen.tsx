@@ -19,6 +19,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { AiUsageToday } from '../../api/auth';
 import { RootStackParamList } from '../../navigation/types';
 import { LANGUAGES, LANG_NATIVE } from '../../constants/languages';
+import { UserAvatar } from '../../components/UserAvatar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -105,8 +106,6 @@ export default function ProfileScreen() {
     { label: t('profile.chats'),       value: usage.ai_chat_count,     max: tier.chat,      icon: MessageCircle },
   ];
 
-  const initial = user?.name?.[0]?.toUpperCase() ?? 'U';
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -124,24 +123,29 @@ export default function ProfileScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
         <View style={styles.profileRow}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initial}</Text>
-            </View>
-          </View>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate('EditProfile')}>
+            <UserAvatar avatar={user?.avatar} name={user?.name} size={72} />
+          </TouchableOpacity>
           <View style={styles.profileInfo}>
-            <Text style={styles.name}>{user?.name}</Text>
-            <View style={styles.emailRow}>
-              <Text style={styles.email}>{user?.email}</Text>
-              <TouchableOpacity activeOpacity={0.7}>
-                <Pencil size={14} color={colors.textMuted} strokeWidth={2} />
+            <View style={styles.nameRow}>
+              <Text style={styles.name} numberOfLines={1}>{user?.name}</Text>
+              <TouchableOpacity
+                style={styles.editBtn}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate('EditProfile')}
+              >
+                <Pencil size={13} color={colors.primary} strokeWidth={2} />
+                <Text style={styles.editBtnText}>{t('editProfile.edit')}</Text>
               </TouchableOpacity>
             </View>
-            {user?.isPremium && (
+            <View style={styles.emailRow}>
+              <Text style={styles.email}>{user?.email}</Text>
+            </View>
+            {(user?.isPremium || user?.isPro) && (
               <View style={styles.premiumBadgeRow}>
                 <View style={styles.premiumBadge}>
                   <Crown size={11} color={colors.warning} strokeWidth={2} />
-                  <Text style={styles.premiumBadgeText}>{t('profile.premium')}</Text>
+                  <Text style={styles.premiumBadgeText}>{user.isPro ? 'Pro' : t('profile.premium')}</Text>
                 </View>
                 <Text style={styles.memberSince}>{t('profile.memberSincePrefix')} {user.memberSince}</Text>
               </View>
@@ -345,7 +349,14 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center', ...Shadow.md },
   avatarText: { fontSize: FontSize.xxl, fontWeight: FontWeight.extrabold, color: c.textInverse },
   profileInfo: { flex: 1, gap: 4 },
-  name: { fontSize: FontSize.xl, fontWeight: FontWeight.extrabold, color: c.text },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
+  name: { fontSize: FontSize.xl, fontWeight: FontWeight.extrabold, color: c.text, flexShrink: 1 },
+  editBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: c.primarySurface, borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm, paddingVertical: 3,
+  },
+  editBtnText: { fontSize: FontSize.xs, color: c.primary, fontWeight: FontWeight.semibold },
   emailRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   email: { fontSize: FontSize.sm, color: c.textSecondary },
   premiumBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: 2 },

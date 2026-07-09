@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   Alert, ActivityIndicator, Dimensions, ScrollView, TextInput,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -12,7 +13,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import {
   X, Camera, Image as ImageIcon, Sparkles, RotateCcw,
   Zap, ZapOff, ChevronRight, RefreshCw, Plus, PenLine,
-  Minus, Search, Carrot, Apple, Leaf, Beef, Fish, Milk,
+  Search, Carrot, Apple, Leaf, Beef, Fish, Milk, SlidersHorizontal,
   Wheat, Bean, Nut, Droplets, Cake, Package, CupSoda, UtensilsCrossed,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
@@ -26,6 +27,8 @@ import {
   CATALOG_CATEGORIES, INGREDIENT_CATALOG, CatalogCategoryId,
   localizeIngredient, searchCatalog,
 } from '../../data/ingredientCatalog';
+import { useScanBasketStore } from '../../store/scanBasketStore';
+import { formatItemAmount, amountToEnglish } from '../../utils/ingredientUnits';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width, height } = Dimensions.get('window');
@@ -52,8 +55,15 @@ export default function ScanScreen() {
   const [flash, setFlash]             = useState(false);
   const [phase, setPhase]             = useState<Phase>('choice');
   const [previewUri, setPreviewUri]   = useState<string | null>(null);
-  const [ingredients, setIngredients] = useState<string[]>([]);
-  const [quantities, setQuantities]   = useState<Record<string, number>>({});
+  // Ingredient basket (name + amount + unit) lives in a shared store so the
+  // dedicated amounts page (#8) and this screen stay in sync.
+  const basketItems = useScanBasketStore((s) => s.items);
+  const setBasketNames = useScanBasketStore((s) => s.setNames);
+  const addToBasket = useScanBasketStore((s) => s.add);
+  const removeFromBasket = useScanBasketStore((s) => s.remove);
+  const clearBasket = useScanBasketStore((s) => s.clear);
+  const ingredients = basketItems.map((i) => i.name);
+
   const [scanError, setScanError]     = useState<string | null>(null);
   const [manualInput, setManualInput] = useState('');
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -100,8 +110,7 @@ export default function ScanScreen() {
         setPhase('result');
         return;
       }
-      setIngredients(found);
-      setQuantities(Object.fromEntries(found.map((n) => [n, 1])));
+      setBasketNames(found);
       setPhase('result');
     } catch (err: any) {
       setScanError(err?.message ?? t('scan.scanFailed'));
@@ -145,46 +154,34 @@ export default function ScanScreen() {
   function reset() {
     setPhase('choice');
     setPreviewUri(null);
-    setIngredients([]);
-    setQuantities({});
+    clearBasket();
     setScanError(null);
     setManualInput('');
     setCatalogSearch('');
   }
 
   function addIngredient(name: string) {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    if (!ingredients.includes(trimmed)) {
-      setIngredients((prev) => [...prev, trimmed]);
-      setQuantities((prev) => ({ ...prev, [trimmed]: 1 }));
-    }
+    addToBasket(name);
   }
 
   function addManualIngredient() {
-    addIngredient(manualInput);
+    addToBasket(manualInput);
     setManualInput('');
   }
 
   function removeIngredient(name: string) {
-    setIngredients((prev) => prev.filter((i) => i !== name));
-    setQuantities((prev) => { const n = { ...prev }; delete n[name]; return n; });
+    removeFromBasket(name);
   }
 
-  function changeQty(name: string, delta: number) {
-    const current = quantities[name] ?? 1;
-    const next = current + delta;
-    if (next <= 0) { removeIngredient(name); return; }
-    if (next > 99) return;
-    setQuantities((prev) => ({ ...prev, [name]: next }));
-  }
-
-  // Recipe matching works on plain names; AI generation benefits from amounts
+  // Recipe matching works on plain names; AI generation gets amounts + units,
+  // but only for ingredients the user actually set an amount for.
   function ingredientsWithQty(): string[] {
-    return ingredients.map((n) => {
-      const q = quantities[n] ?? 1;
-      return q > 1 ? `${q}x ${n}` : n;
-    });
+    return basketItems.map((i) => (i.custom ? amountToEnglish(i.amount, i.unit, i.name) : i.name));
+  }
+
+  function openAmounts() {
+    if (ingredients.length === 0) return;
+    navigation.navigate('IngredientAmounts');
   }
 
   function goToMatches() {
@@ -293,7 +290,10 @@ export default function ScanScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <>
+          <KeyboardAvoidingView
+            style={styles.kav}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
             <View style={styles.foundHeader}>
               <View style={styles.foundBadge}>
                 <Sparkles size={13} color={colors.primary} strokeWidth={2} />
@@ -303,31 +303,38 @@ export default function ScanScreen() {
             </View>
 
             <ScrollView
+              style={styles.scrollFlex}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.catalogScroll}
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.tagContainer}>
-                {ingredients.map((name) => {
-                  const qty = quantities[name] ?? 1;
-                  return (
-                    <View key={name} style={styles.tag}>
-                      <TouchableOpacity onPress={() => changeQty(name, -1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}>
-                        <Minus size={13} color={colors.primary} strokeWidth={2.5} />
-                      </TouchableOpacity>
-                      <Text style={styles.tagText}>
-                        {localizeIngredient(name, lang)}{qty > 1 ? ` ×${qty}` : ''}
-                      </Text>
-                      <TouchableOpacity onPress={() => changeQty(name, 1)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
-                        <Plus size={13} color={colors.primary} strokeWidth={2.5} />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => removeIngredient(name)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
-                        <X size={12} color={colors.error} strokeWidth={2.5} />
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })}
+                {basketItems.map((item) => (
+                  <TouchableOpacity
+                    key={item.name}
+                    style={styles.tag}
+                    onPress={openAmounts}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.tagText}>
+                      {localizeIngredient(item.name, lang)}
+                      {item.custom ? (
+                        <Text style={styles.tagAmount}>  {formatItemAmount(item.amount, item.unit, lang)}</Text>
+                      ) : null}
+                    </Text>
+                    <TouchableOpacity onPress={() => removeIngredient(item.name)} hitSlop={{ top: 8, bottom: 8, left: 6, right: 8 }}>
+                      <X size={13} color={colors.error} strokeWidth={2.5} />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                ))}
               </View>
+
+              {ingredients.length > 0 && (
+                <TouchableOpacity style={styles.adjustBtn} onPress={openAmounts} activeOpacity={0.85}>
+                  <SlidersHorizontal size={15} color={colors.primary} strokeWidth={2.2} />
+                  <Text style={styles.adjustBtnText}>{t('scan.setAmounts')}</Text>
+                </TouchableOpacity>
+              )}
 
               {/* Catalog browser (manual mode only — scan results stay clean).
                   Category chips are color-coded with icons so they read
@@ -380,48 +387,80 @@ export default function ScanScreen() {
                     </ScrollView>
                   )}
 
-                  <View style={styles.catalogGrid}>
-                    {(catalogSearch.trim().length > 0
+                  {(() => {
+                    const searching = catalogSearch.trim().length > 0;
+                    const results = searching
                       ? searchCatalog(catalogSearch)
-                      : INGREDIENT_CATALOG.filter((it) => it.cat === activeCat)
-                    ).map((item) => {
-                      const added = ingredients.includes(item.en);
+                      : INGREDIENT_CATALOG.filter((it) => it.cat === activeCat);
+
+                    // #7 — nothing in the catalog matches the search: offer to add
+                    // exactly what the user typed as a custom ingredient.
+                    if (searching && results.length === 0) {
+                      const term = catalogSearch.trim();
                       return (
-                        <TouchableOpacity
-                          key={item.en}
-                          style={[styles.catalogChip, added && styles.catalogChipAdded]}
-                          onPress={() => added ? removeIngredient(item.en) : addIngredient(item.en)}
-                          activeOpacity={0.75}
-                        >
-                          {added
-                            ? <X size={11} color={colors.primary} strokeWidth={2.5} />
-                            : <Plus size={11} color={colors.textMuted} strokeWidth={2.5} />}
-                          <Text style={[styles.catalogChipText, added && { color: colors.primary }]}>
-                            {localizeIngredient(item.en, lang)}
-                          </Text>
-                        </TouchableOpacity>
+                        <View style={styles.notFoundBox}>
+                          <Text style={styles.notFoundText}>{t('scan.notFound')}</Text>
+                          <TouchableOpacity
+                            style={styles.addOwnBtn}
+                            onPress={() => { addIngredient(term); setCatalogSearch(''); }}
+                            activeOpacity={0.85}
+                          >
+                            <Plus size={16} color={colors.textInverse} strokeWidth={2.5} />
+                            <Text style={styles.addOwnBtnText} numberOfLines={1}>
+                              {t('scan.addOwnPrefix')} “{term}”
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
                       );
-                    })}
-                  </View>
+                    }
+
+                    return (
+                      <View style={styles.catalogGrid}>
+                        {results.map((item) => {
+                          const added = ingredients.includes(item.en);
+                          return (
+                            <TouchableOpacity
+                              key={item.en}
+                              style={[styles.catalogChip, added && styles.catalogChipAdded]}
+                              onPress={() => added ? removeIngredient(item.en) : addIngredient(item.en)}
+                              activeOpacity={0.75}
+                            >
+                              {added
+                                ? <X size={11} color={colors.primary} strokeWidth={2.5} />
+                                : <Plus size={11} color={colors.textMuted} strokeWidth={2.5} />}
+                              <Text style={[styles.catalogChipText, added && { color: colors.primary }]}>
+                                {localizeIngredient(item.en, lang)}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    );
+                  })()}
                 </>
               )}
             </ScrollView>
 
             <View style={styles.actionFooter}>
-              <View style={styles.manualInputRow}>
-                <TextInput
-                  style={styles.manualInput}
-                  value={manualInput}
-                  onChangeText={setManualInput}
-                  placeholder={t('scan.addManualPlaceholder')}
-                  placeholderTextColor={colors.textMuted}
-                  onSubmitEditing={addManualIngredient}
-                  returnKeyType="done"
-                />
-                <TouchableOpacity style={styles.manualAddBtn} onPress={addManualIngredient} activeOpacity={0.8}>
-                  <Plus size={18} color={colors.textInverse} strokeWidth={2.5} />
-                </TouchableOpacity>
-              </View>
+              {/* In manual mode the search box + "add your own" already covers
+                  typing a custom ingredient, so this input only shows for scan
+                  results (which have no catalog search). */}
+              {!isManual && (
+                <View style={styles.manualInputRow}>
+                  <TextInput
+                    style={styles.manualInput}
+                    value={manualInput}
+                    onChangeText={setManualInput}
+                    placeholder={t('scan.addManualPlaceholder')}
+                    placeholderTextColor={colors.textMuted}
+                    onSubmitEditing={addManualIngredient}
+                    returnKeyType="done"
+                  />
+                  <TouchableOpacity style={styles.manualAddBtn} onPress={addManualIngredient} activeOpacity={0.8}>
+                    <Plus size={18} color={colors.textInverse} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[styles.matchBtn, ingredients.length === 0 && styles.disabledBtn]}
@@ -443,7 +482,7 @@ export default function ScanScreen() {
                 <Text style={styles.generateBtnText}>{t('scan.generateWithAI')}</Text>
               </TouchableOpacity>
             </View>
-          </>
+          </KeyboardAvoidingView>
         )}
       </SafeAreaView>
     );
@@ -686,7 +725,23 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   foundBadgeText: { fontSize: FontSize.sm, color: c.primary, fontWeight: FontWeight.semibold },
   foundHint:      { fontSize: FontSize.xs, color: c.textMuted },
 
-  catalogScroll: { paddingBottom: 220 },
+  kav: { flex: 1 },
+  scrollFlex: { flex: 1 },
+  catalogScroll: { paddingBottom: Spacing.lg },
+
+  notFoundBox: {
+    marginHorizontal: Spacing.base, marginTop: Spacing.lg,
+    padding: Spacing.lg, borderRadius: BorderRadius.xl,
+    backgroundColor: c.surface, borderWidth: 1.5, borderColor: c.border,
+    borderStyle: 'dashed', alignItems: 'center', gap: Spacing.md,
+  },
+  notFoundText: { fontSize: FontSize.sm, color: c.textMuted, textAlign: 'center' },
+  addOwnBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: c.primary, borderRadius: BorderRadius.full,
+    paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.lg, maxWidth: '100%',
+  },
+  addOwnBtnText: { color: c.textInverse, fontSize: FontSize.sm, fontWeight: FontWeight.semibold, flexShrink: 1 },
   tagContainer: {
     flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm,
     paddingHorizontal: Spacing.base,
@@ -698,6 +753,14 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
     borderWidth: 1, borderColor: c.primary + '40',
   },
   tagText: { fontSize: FontSize.sm, color: c.primary, fontWeight: FontWeight.medium },
+  tagAmount: { fontSize: FontSize.xs, color: c.primary, fontWeight: FontWeight.bold },
+  adjustBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+    marginHorizontal: Spacing.base, marginTop: Spacing.md,
+    paddingVertical: Spacing.sm + 2, borderRadius: BorderRadius.full,
+    borderWidth: 1.5, borderColor: c.primary + '55', backgroundColor: c.primarySurface,
+  },
+  adjustBtnText: { fontSize: FontSize.sm, color: c.primary, fontWeight: FontWeight.semibold },
 
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
@@ -741,7 +804,6 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
     backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center',
   },
   actionFooter: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: c.background, borderTopWidth: 1, borderTopColor: c.border,
     padding: Spacing.base, gap: Spacing.sm,
   },

@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
+import * as Sentry from '@sentry/react-native';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Switch, Modal, Pressable, Alert, Linking, Platform,
@@ -7,7 +8,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import {
-  Bell, Globe, Ruler, Moon, Shield, FileText, Mail,
+  Bell, Globe, Moon, Shield, FileText, Mail,
   ChevronRight, Check, Clock, ChevronLeft, X,
   Utensils, Send, Eye, Database, Cpu, UserCheck, Ban, CreditCard, AlertCircle, RefreshCw,
 } from 'lucide-react-native';
@@ -27,13 +28,6 @@ import {
   isNotificationsAvailable,
 } from '../../services/notificationService';
 
-
-function getUnitsOptions(t: (key: string) => string): { value: 'Metric' | 'Imperial'; label: string; desc: string }[] {
-  return [
-    { value: 'Metric',   label: t('settings.metric'),   desc: 'kg, g, ml, °C, cm' },
-    { value: 'Imperial', label: t('settings.imperial'), desc: 'lb, oz, fl oz, °F, in' },
-  ];
-}
 
 const CONTACT_EMAIL = 'savorachef@gmail.com';
 const APP_VERSION = '2.1.0';
@@ -69,14 +63,13 @@ const TERMS_ICONS: { icon: any; iconColor: string }[] = [
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-type ModalType = 'units' | 'privacy' | 'terms' | 'contact' | 'reminders' | null;
+type ModalType = 'privacy' | 'terms' | 'contact' | 'reminders' | null;
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const { colors, isDark } = useTheme();
   const { t, raw } = useTranslation();
   const styles = makeStyles(colors, isDark);
-  const UNITS_OPTIONS = getUnitsOptions(t);
   const PRIVACY_SECTIONS: LegalItem[] = raw<{ title: string; body?: string; bullets?: string[] }[]>('settings.privacySections')
     .map((s, i) => ({ ...s, ...PRIVACY_ICONS[i] }));
   const TERMS_SECTIONS: LegalItem[] = raw<{ title: string; body?: string; bullets?: string[] }[]>('settings.termsSections')
@@ -88,7 +81,6 @@ export default function SettingsScreen() {
     mealReminderTimes, setMealReminderTimes,
     recipeSuggestions, setRecipeSuggestions,
     cookingTips, setCookingTips,
-    units, setUnits,
   } = useUserStore();
 
   const [activeModal, setActiveModal] = useState<ModalType>(null);
@@ -186,6 +178,26 @@ export default function SettingsScreen() {
     closeModal();
   }
 
+  // ── Sentry smoke test (hidden) ────────────────────────────────────────────
+  // Sentry only reports in release builds (init has enabled: !__DEV__), so the
+  // check must run inside an installed EAS build — 7 taps on the version text.
+
+  const versionTaps = useRef(0);
+  const versionTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleVersionTap() {
+    versionTaps.current += 1;
+    if (versionTapTimer.current) clearTimeout(versionTapTimer.current);
+    versionTapTimer.current = setTimeout(() => { versionTaps.current = 0; }, 2000);
+    if (versionTaps.current >= 7) {
+      versionTaps.current = 0;
+      Sentry.captureException(new Error(`Savora Sentry smoke test v${APP_VERSION}`));
+      Alert.alert('Sentry', __DEV__
+        ? 'Test error captured — but Sentry is DISABLED in dev builds, so it was not sent. Use an EAS build.'
+        : 'Test error sent — check the Sentry dashboard in ~1 minute.');
+    }
+  }
+
   // ── Contact send ──────────────────────────────────────────────────────────
 
   function handleSendEmail() {
@@ -228,11 +240,6 @@ export default function SettingsScreen() {
       title: t('settings.preferences'),
       items: [
         { label: t('settings.darkMode'), sublabel: t('settings.darkModeSub'), icon: Moon, type: 'toggle', key: 'darkMode', color: colors.textSecondary },
-        {
-          label: t('settings.units'), sublabel: units === 'Metric' ? 'kg · g · ml · °C' : 'lb · oz · fl oz · °F',
-          icon: Ruler, type: 'modal', modal: 'units' as ModalType,
-          color: '#7C3AED',
-        },
       ],
     },
     {
@@ -306,10 +313,10 @@ export default function SettingsScreen() {
                           </TouchableOpacity>
                         )}
                         <Switch
-                          value={getToggleValue(item.key!)}
-                          onValueChange={(v) => handleToggle(item.key!, v)}
+                          value={getToggleValue((item as any).key)}
+                          onValueChange={(v) => handleToggle((item as any).key, v)}
                           trackColor={{ false: colors.borderLight, true: colors.primary + '80' }}
-                          thumbColor={getToggleValue(item.key!) ? colors.primary : colors.textMuted}
+                          thumbColor={getToggleValue((item as any).key) ? colors.primary : colors.textMuted}
                           disabled={notifLoading}
                         />
                       </View>
@@ -324,32 +331,10 @@ export default function SettingsScreen() {
           </View>
         ))}
 
-        <Text style={styles.version}>Savora v{APP_VERSION}</Text>
+        {/* Hidden diagnostics: 7 taps on the version sends a Sentry test error */}
+        <Text style={styles.version} onPress={handleVersionTap}>Savora v{APP_VERSION}</Text>
         <View style={{ height: Spacing.xl }} />
       </ScrollView>
-
-      {/* ── Units Modal ──────────────────────────────────────────────────── */}
-      <BottomSheet visible={activeModal === 'units'} onClose={closeModal} title={t('settings.measurementUnits')}>
-        {UNITS_OPTIONS.map((opt) => (
-          <TouchableOpacity
-            key={opt.value}
-            style={[styles.optionRow, units === opt.value && styles.optionRowActive]}
-            onPress={() => { setUnits(opt.value); closeModal(); }}
-            activeOpacity={0.75}
-          >
-            <View style={styles.optionInfo}>
-              <Text style={styles.optionLabel}>{opt.label}</Text>
-              <Text style={styles.optionDesc}>{opt.desc}</Text>
-            </View>
-            {units === opt.value && <Check size={18} color={colors.primary} strokeWidth={2.5} />}
-          </TouchableOpacity>
-        ))}
-        <View style={styles.unitsNote}>
-          <Text style={styles.unitsNoteText}>
-            {t('settings.unitsNote')}
-          </Text>
-        </View>
-      </BottomSheet>
 
       {/* ── Meal Reminder Times Modal ────────────────────────────────────── */}
       <BottomSheet visible={activeModal === 'reminders'} onClose={closeModal} title={t('settings.mealReminderTimes')}>

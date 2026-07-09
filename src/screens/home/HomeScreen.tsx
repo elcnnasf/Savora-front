@@ -9,35 +9,50 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   Camera, Sparkles, CalendarDays, Heart, ChevronRight, Flame, Clock,
-  ShoppingCart, Users,
+  ShoppingCart, Users, Bookmark,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
 import { FontSize, FontWeight } from '../../constants/typography';
 import { useAuthStore } from '../../store/authStore';
-import { useRecentlyViewedStore } from '../../store/recentlyViewedStore';
 import { useCookingProgressStore } from '../../store/cookingProgressStore';
+import { useDailyPickStore, todayKey } from '../../store/dailyPickStore';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { RECIPES } from '../../data/mockData';
 import { getGreetingKey } from '../../utils/date';
 import { RootStackParamList, ApiRecipe } from '../../navigation/types';
-import { fetchRecipes } from '../../api/recipes';
-import { localizeRecipe, localizeRecipes } from '../../utils/recipeLocale';
+import { fetchRecipes, saveRecipe, unsaveRecipe, getRecipeSavedStatus } from '../../api/recipes';
+import { localizeRecipe } from '../../utils/recipeLocale';
 import { useUserStore } from '../../store/userStore';
 import { rankByPreferences } from '../../utils/preferenceScore';
+import { UserAvatar } from '../../components/UserAvatar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width } = Dimensions.get('window');
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&q=80';
 
+// Deterministic "pick of the day": stable for a given user for the whole day,
+// rotates tomorrow, and differs per user. Keeps the AI recommendation daily
+// instead of reshuffling on every screen focus.
+function dailyPickIndex(seedKey: string, len: number): number {
+  if (len <= 0) return 0;
+  const now = new Date();
+  const s = `${seedKey}|${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % len;
+}
+
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const { user, isAuthenticated } = useAuthStore();
-  const recentlyViewed = useRecentlyViewedStore((s) => s.recipes);
   const preferences = useUserStore((s) => s.preferences);
   const cookingProgress = useCookingProgressStore((s) => s.progress);
+  const cookingSnapshots = useCookingProgressStore((s) => s.snapshots);
+  const dailyPick = useDailyPickStore((s) => s.pick);
+  const setDailyPick = useDailyPickStore((s) => s.setPick);
   const { colors } = useTheme();
   const { t, lang } = useTranslation();
   const styles = makeStyles(colors);
@@ -55,27 +70,94 @@ export default function HomeScreen() {
       .finally(() => setLoadingRecs(false));
   }, [preferences]));
 
+  // Daily, per-user recommendation. It must stay fixed for the whole day even
+  // when the screen loses/regains focus (and the API returns the pool in a
+  // different order), so we persist the chosen recipe id and only reselect when
+  // the day changes or the recipe was finished (progress = 100%).
+  const uid = user?.id ?? 'guest';
+  const today = todayKey();
+
+  const featuredRaw: ApiRecipe | null = useMemo(() => {
+    if (recommendations.length === 0) return null;
+    // Exclude only *finished* recipes (100%) — starting to cook the featured
+    // recipe must not make it disappear from the recommendation mid-day.
+    const doneIds = new Set(
+      Object.keys(cookingProgress).filter((id) => (cookingProgress[id] ?? 0) >= 100),
+    );
+    const pool = recommendations.filter((r) => !doneIds.has(r.id));
+    const list = pool.length > 0 ? pool : recommendations;
+
+    // Reuse today's stored pick if it's still valid and available.
+    if (dailyPick && dailyPick.date === today && dailyPick.userId === uid) {
+      const stored = list.find((r) => r.id === dailyPick.recipeId);
+      if (stored) return stored;
+    }
+    const top = list.slice(0, Math.min(8, list.length));
+    return top[dailyPickIndex(uid, top.length)] ?? null;
+  }, [recommendations, cookingProgress, uid, today, dailyPick]);
+
+  // Persist the pick once chosen (or when the day/pick changes).
+  useEffect(() => {
+    if (!featuredRaw) return;
+    if (!dailyPick || dailyPick.date !== today || dailyPick.userId !== uid || dailyPick.recipeId !== featuredRaw.id) {
+      setDailyPick({ date: today, userId: uid, recipeId: featuredRaw.id });
+    }
+  }, [featuredRaw?.id, today, uid]);
+
   const featured: ApiRecipe | null = useMemo(
-    () => (recommendations[0] ? localizeRecipe(recommendations[0], lang) : null),
-    [recommendations, lang],
-  );
-  const localizedRecentlyViewed = useMemo(
-    () => localizeRecipes(recentlyViewed, lang),
-    [recentlyViewed, lang],
+    () => (featuredRaw ? localizeRecipe(featuredRaw, lang) : null),
+    [featuredRaw, lang],
   );
 
-  // Only recipes with cooking actually started and left unfinished
-  const inProgressRecipes = useMemo(
-    () => localizedRecentlyViewed.filter((r) => (cookingProgress[r.id] ?? 0) > 0),
-    [localizedRecentlyViewed, cookingProgress],
-  );
+  const [featuredSaved, setFeaturedSaved] = useState(false);
+  const [savingFeatured, setSavingFeatured] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated || !featuredRaw) { setFeaturedSaved(false); return; }
+    getRecipeSavedStatus(featuredRaw.id)
+      .then((res) => setFeaturedSaved(res.data.saved))
+      .catch(() => {});
+  }, [isAuthenticated, featuredRaw?.id]);
+
+  async function toggleFeaturedSave() {
+    if (!isAuthenticated) { navigation.navigate('SignIn'); return; }
+    if (!featuredRaw || savingFeatured) return;
+    const prev = featuredSaved;
+    setSavingFeatured(true);
+    setFeaturedSaved(!prev); // optimistic
+    try {
+      if (prev) await unsaveRecipe(featuredRaw.id);
+      else      await saveRecipe(featuredRaw.id);
+    } catch {
+      setFeaturedSaved(prev); // revert on failure
+    } finally {
+      setSavingFeatured(false);
+    }
+  }
+  // Half-finished recipes (0 < progress < 100), newest first, kept for 3 days.
+  // Sourced from the cooking-progress store's own snapshots so an item survives
+  // even after it drops off the (capped) recently-viewed list.
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const inProgressCards = useMemo(() => {
+    const cutoff = Date.now() - THREE_DAYS_MS;
+    return Object.values(cookingSnapshots)
+      .filter((s) => {
+        const pct = cookingProgress[s.card.id] ?? 0;
+        return pct > 0 && pct < 100 && s.updatedAt >= cutoff;
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((s) => ({ ...s.card, pct: cookingProgress[s.card.id] ?? 0 }));
+  }, [cookingSnapshots, cookingProgress]);
   const clearAllProgress = useCookingProgressStore((s) => s.clearAll);
 
   // "Continue" section must never be empty: guests and first-time users get
   // preference-ranked suggestions to start with (API pool, else bundled mocks)
   const continueFallback = useMemo(() => {
-    if (inProgressRecipes.length > 0) return [];
-    const fromApi = recommendations.slice(1, 6).map((r) => localizeRecipe(r, lang));
+    if (inProgressCards.length > 0) return [];
+    const fromApi = recommendations
+      .filter((r) => r.id !== featuredRaw?.id)
+      .slice(0, 5)
+      .map((r) => localizeRecipe(r, lang));
     if (fromApi.length > 0) {
       return fromApi.map((r) => ({
         key: r.id,
@@ -92,7 +174,7 @@ export default function HomeScreen() {
       time: r.cookTime,
       open: () => navigation.navigate('RecipeDetail', { recipeId: r.id }),
     }));
-  }, [inProgressRecipes.length, recommendations, lang]);
+  }, [inProgressCards.length, recommendations, lang, featuredRaw?.id]);
 
   // Fallback mock featured for when API has no data
   const mockFeatured = RECIPES[0];
@@ -135,17 +217,16 @@ export default function HomeScreen() {
             <Text style={styles.logoText}>savora</Text>
           </View>
           <View style={styles.headerRight}>
-            {user?.isPremium && (
+            {(user?.isPremium || user?.isPro) && (
               <View style={styles.premiumBadge}>
-                <Text style={styles.premiumBadgeText}>👑 Premium</Text>
+                <Text style={styles.premiumBadgeText}>{user?.isPro ? '👑 Pro' : '👑 Premium'}</Text>
               </View>
             )}
             <TouchableOpacity
-              style={styles.avatarSmall}
               activeOpacity={0.8}
               onPress={() => navigation.navigate('Profile' as any)}
             >
-              <Text style={styles.avatarSmallText}>{user?.name?.[0]?.toUpperCase() ?? 'U'}</Text>
+              <UserAvatar avatar={user?.avatar} name={user?.name} size={36} />
             </TouchableOpacity>
           </View>
         </View>
@@ -190,6 +271,27 @@ export default function HomeScreen() {
           })}
         </View>
 
+        {/* Calorie Counter (Premium/Pro) */}
+        <TouchableOpacity
+          style={styles.calorieBanner}
+          onPress={() => goAuth('CalorieCounter')}
+          activeOpacity={0.88}
+        >
+          <View style={styles.calorieBannerIcon}>
+            <Flame size={22} color="#F59E0B" strokeWidth={2} />
+          </View>
+          <View style={styles.calorieBannerText}>
+            <View style={styles.calorieBannerTitleRow}>
+              <Text style={styles.calorieBannerTitle}>{t('calorieCounter.title')}</Text>
+              <View style={styles.proChip}>
+                <Text style={styles.proChipText}>PRO</Text>
+              </View>
+            </View>
+            <Text style={styles.calorieBannerSub} numberOfLines={2}>{t('calorieCounter.bannerSub')}</Text>
+          </View>
+          <ChevronRight size={18} color={colors.textMuted} strokeWidth={2} />
+        </TouchableOpacity>
+
         {/* Today's Recommendations */}
         <View style={[styles.sectionHeader, { marginTop: Spacing.lg }]}>
           <View>
@@ -222,9 +324,20 @@ export default function HomeScreen() {
                     <Text style={styles.featuredTagText}>{featured.tags[0]}</Text>
                   </View>
                 ) : null}
-                <View style={styles.heartBtn}>
-                  <Heart size={16} color={colors.textSecondary} strokeWidth={2} />
-                </View>
+                <TouchableOpacity
+                  style={styles.heartBtn}
+                  onPress={toggleFeaturedSave}
+                  disabled={savingFeatured}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Bookmark
+                    size={16}
+                    color={featuredSaved ? colors.primary : colors.textSecondary}
+                    fill={featuredSaved ? colors.primary : 'transparent'}
+                    strokeWidth={2}
+                  />
+                </TouchableOpacity>
               </View>
               <Text style={styles.featuredTitle} numberOfLines={2}>{featured.title}</Text>
               <View style={styles.statsRow}>
@@ -320,11 +433,11 @@ export default function HomeScreen() {
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionTitle}>{t('home.continueWhere')}</Text>
-            {inProgressRecipes.length === 0 && (
+            {inProgressCards.length === 0 && (
               <Text style={styles.aiPickText}>{t('home.startCookingHint')}</Text>
             )}
           </View>
-          {inProgressRecipes.length > 0 && (
+          {inProgressCards.length > 0 && (
             <TouchableOpacity onPress={clearAllProgress} activeOpacity={0.7}>
               <Text style={styles.seeAll}>{t('discover.reset')}</Text>
             </TouchableOpacity>
@@ -336,30 +449,27 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.horizontalScroll}
         >
-          {inProgressRecipes.length > 0 ? (
-            inProgressRecipes.map((recipe) => {
-              const pct = cookingProgress[recipe.id];
-              return (
-                <TouchableOpacity
-                  key={recipe.id}
-                  style={styles.continueCard}
-                  activeOpacity={0.85}
-                  onPress={() => navigateToRecipe(recipe)}
-                >
-                  <SafeImage uri={recipe.image_url || FALLBACK_IMAGE} style={styles.continueImage} />
-                  <View style={styles.progressBadge}>
-                    <Text style={styles.progressText}>{pct}%</Text>
+          {inProgressCards.length > 0 ? (
+            inProgressCards.map((card) => (
+              <TouchableOpacity
+                key={card.id}
+                style={styles.continueCard}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('RecipeDetail', { recipeId: card.id })}
+              >
+                <SafeImage uri={card.image_url || FALLBACK_IMAGE} style={styles.continueImage} />
+                <View style={styles.progressBadge}>
+                  <Text style={styles.progressText}>{card.pct}%</Text>
+                </View>
+                <View style={styles.continueInfo}>
+                  <Text style={styles.continueName} numberOfLines={1}>{card.title}</Text>
+                  <View style={styles.progressBarRow}>
+                    <View style={[styles.progressBarFill, { width: `${card.pct}%` }]} />
                   </View>
-                  <View style={styles.continueInfo}>
-                    <Text style={styles.continueName}>{recipe.title}</Text>
-                    <View style={styles.progressBarRow}>
-                      <View style={[styles.progressBarFill, { width: `${pct}%` }]} />
-                    </View>
-                    <Text style={styles.continueTime}>{recipe.cook_time ?? 0} {t('recipe.min')}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
+                  <Text style={styles.continueTime}>{card.cook_time ?? 0} {t('recipe.min')}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
           ) : (
             continueFallback.map((item) => (
               <TouchableOpacity
@@ -471,6 +581,36 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
     lineHeight: 11,
     marginTop: 1,
   },
+
+  calorieBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginHorizontal: Spacing.base,
+    marginTop: Spacing.md,
+    padding: Spacing.md,
+    backgroundColor: c.surface,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: c.borderLight,
+    ...Shadow.sm,
+  },
+  calorieBannerIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  calorieBannerText: { flex: 1 },
+  calorieBannerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  calorieBannerTitle: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: c.text },
+  proChip: {
+    backgroundColor: '#1F2937',
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  proChipText: { fontSize: 9, fontWeight: FontWeight.extrabold, color: '#FBBF24', letterSpacing: 0.5 },
+  calorieBannerSub: { fontSize: FontSize.xs, color: c.textMuted, marginTop: 1 },
 
   loadingBox: {
     marginHorizontal: Spacing.base,

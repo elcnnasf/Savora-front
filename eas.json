@@ -5,13 +5,27 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-YOUR-TUNNEL.trycloudflare.com",
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": ""
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-YOUR-TUNNEL.trycloudflare.com",
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://099b8381acd7fecd8001bd5ad8b17fb0@o4511707291910144.ingest.de.sentry.io/4511707300364368"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-YOUR-DEPLOYED-BACKEND",
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "REPLACE-WITH-goog_-PUBLIC-KEY",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://099b8381acd7fecd8001bd5ad8b17fb0@o4511707291910144.ingest.de.sentry.io/4511707300364368"
+      }
     }
   },
   "submit": {

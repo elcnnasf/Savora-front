@@ -65,7 +65,14 @@
           "iosUrlScheme": "com.googleusercontent.apps.222488883686-rqc0m6dgumdgjsk1t49rimuev5q5cci6"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "savora-bm",
+          "project": "react-native"
+        }
+      ]
     ],
     "extra": {
       "eas": {

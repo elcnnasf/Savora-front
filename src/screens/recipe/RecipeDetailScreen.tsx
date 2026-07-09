@@ -9,7 +9,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   ChevronLeft, Bookmark, Share2, Star, Clock,
-  Flame, Users, Minus, Plus, ShoppingCart, Check, Sparkles,
+  Flame, Users, Minus, Plus, ShoppingCart, Check, Sparkles, FolderPlus, Info,
 } from 'lucide-react-native';
 import { AppColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadow } from '../../constants/spacing';
@@ -23,6 +23,9 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { saveRecipe, unsaveRecipe, getRecipeSavedStatus, fetchRecipeById, rateRecipe, getMyRating } from '../../api/recipes';
 import { add as addShoppingItem, addBulk as addBulkItems } from '../../services/shoppingListOffline';
 import { useRecentlyViewedStore } from '../../store/recentlyViewedStore';
+import { useCookingProgressStore } from '../../store/cookingProgressStore';
+import { scaleIngredientAmount } from '../../utils/scaleAmount';
+import { AddToCollectionSheet } from '../../components/AddToCollectionSheet';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'RecipeDetail'>;
@@ -145,6 +148,7 @@ export default function RecipeDetailScreen() {
   const { isAuthenticated } = useAuthStore();
   const { language } = useUserStore();
   const addToRecentlyViewed = useRecentlyViewedStore((s) => s.addRecipe);
+  const registerInProgress  = useCookingProgressStore((s) => s.registerInProgress);
   const { colors } = useTheme();
   const { t } = useTranslation();
   const styles = makeStyles(colors);
@@ -164,6 +168,7 @@ export default function RecipeDetailScreen() {
   const [servings,  setServings]  = useState(2);
   const [saved,     setSaved]     = useState(false);
   const [saving,    setSaving]    = useState(false);
+  const [collectionSheet, setCollectionSheet] = useState(false);
   const [myRating,  setMyRating]  = useState<number | null>(null);
   const [ratingAgg, setRatingAgg] = useState<{ avg: number | null; count: number }>({ avg: null, count: 0 });
 
@@ -215,6 +220,26 @@ export default function RecipeDetailScreen() {
     const mock = RECIPES.find((r) => r.id === route.params.recipeId) ?? RECIPES[0];
     return fromMock(mock, langKey);
   }, [route.params.recipe, route.params.recipeId, fetchedRecipe, langKey]);
+
+  // #10 — when opened from an ingredient scan, flag recipe ingredients the user
+  // doesn't have. Compare against the ENGLISH originals (index-parallel to the
+  // localized display list) using the same substring logic the matcher uses.
+  const missingFlags: boolean[] = useMemo(() => {
+    const have = route.params.haveIngredients;
+    if (!have || have.length === 0) return [];
+    const currentId = route.params.recipe?.id ?? route.params.recipeId;
+    const src: ApiRecipe | undefined =
+      (fetchedRecipe && fetchedRecipe.id === currentId) ? fetchedRecipe
+      : route.params.recipe ?? undefined;
+    const englishNames: string[] = src
+      ? (src.ingredients ?? []).map((x: any) => (x.name ?? '').toLowerCase().trim())
+      : (RECIPES.find((r) => r.id === route.params.recipeId)?.ingredients ?? [])
+          .map((x: any) => (x.name ?? '').toLowerCase().trim());
+    const haveNorm = have.map((h) => h.toLowerCase().trim());
+    return englishNames.map((ri) =>
+      ri ? !haveNorm.some((ui) => ri.includes(ui) || ui.includes(ri)) : false,
+    );
+  }, [route.params.haveIngredients, route.params.recipe, route.params.recipeId, fetchedRecipe]);
 
   useEffect(() => {
     setServings(recipe.servings);
@@ -347,9 +372,10 @@ export default function RecipeDetailScreen() {
       return;
     }
     try {
+      const factor = recipe.servings > 0 ? servings / recipe.servings : 1;
       const items = recipe.ingredients.map((ing) => ({
         name:     ing.name,
-        quantity: ing.amount,
+        quantity: scaleIngredientAmount(ing.amount, factor),
         category: categorizeIngredient(ing.name),
       }));
       await addBulkItems(items);
@@ -369,6 +395,11 @@ export default function RecipeDetailScreen() {
     { label: t('recipe.prepTime'), value: String(recipe.prepTime), unit: t('recipe.min') },
     { label: t('recipe.cookTime'), value: String(recipe.cookTime), unit: t('recipe.min') },
   ];
+
+  // Ingredient amounts are stored for the recipe's base serving count; scale
+  // them so the servings stepper actually changes the quantities.
+  const baseServings = recipe.servings > 0 ? recipe.servings : 1;
+  const scaleFactor  = servings / baseServings;
 
   const isIngredientsTab = activeTab === 0;
   const isStepsTab       = activeTab === 1;
@@ -416,6 +447,15 @@ export default function RecipeDetailScreen() {
               <TouchableOpacity style={styles.circleBtn} onPress={handleShare} activeOpacity={0.8}>
                 <Share2 size={18} color="#111" strokeWidth={2} />
               </TouchableOpacity>
+              {recipe.isApi && (
+                <TouchableOpacity
+                  style={styles.circleBtn}
+                  onPress={() => isAuthenticated ? setCollectionSheet(true) : navigation.navigate('SignIn')}
+                  activeOpacity={0.8}
+                >
+                  <FolderPlus size={18} color="#111" strokeWidth={2} />
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.circleBtn} onPress={handleSaveToggle} activeOpacity={0.8} disabled={saving}>
                 <Bookmark
                   size={18}
@@ -448,20 +488,35 @@ export default function RecipeDetailScreen() {
         <View style={styles.content}>
           <View style={styles.titleRow}>
             <Text style={styles.title}>{recipe.name}</Text>
-            {(ratingAgg.avg != null || !recipe.isApi) && (
-              <View style={styles.ratingBadge}>
-                <Star size={13} color={colors.warning} fill={colors.warning} strokeWidth={0} />
-                <Text style={styles.ratingText}>
-                  {(ratingAgg.avg ?? recipe.ratingAvg ?? 0).toFixed(1)}
-                  {recipe.isApi && ratingAgg.count > 0 ? ` (${ratingAgg.count})` : ''}
-                </Text>
-              </View>
-            )}
+            {(() => {
+              // Derive straight from the current recipe so it survives the AZ
+              // re-fetch (translated recipe keeps the same id, so ratingAgg's
+              // effect wouldn't re-run and the badge went blank).
+              const displayAvg   = ratingAgg.avg ?? recipe.ratingAvg;
+              const displayCount = ratingAgg.count || recipe.ratingCount;
+              if (displayAvg == null && recipe.isApi) return null;
+              return (
+                <View style={styles.ratingBadge}>
+                  <Star size={13} color={colors.warning} fill={colors.warning} strokeWidth={0} />
+                  <Text style={styles.ratingText}>
+                    {(displayAvg ?? 0).toFixed(1)}
+                    {recipe.isApi && displayCount > 0 ? ` (${displayCount})` : ''}
+                  </Text>
+                </View>
+              );
+            })()}
           </View>
 
           {recipe.description ? (
             <Text style={styles.description}>{recipe.description}</Text>
           ) : null}
+
+          {recipe.isAI && (
+            <View style={styles.aiDisclaimer}>
+              <Info size={14} color={colors.textMuted} strokeWidth={2} />
+              <Text style={styles.aiDisclaimerText}>{t('recipe.aiDisclaimer')}</Text>
+            </View>
+          )}
 
           {recipe.cuisine || recipe.difficulty ? (
             <View style={styles.metaRow}>
@@ -551,21 +606,27 @@ export default function RecipeDetailScreen() {
                 </View>
               </View>
 
-              {recipe.ingredients.map((ing, i) => (
+              {recipe.ingredients.map((ing, i) => {
+                const scaledAmount = scaleIngredientAmount(ing.amount, scaleFactor);
+                const missing = missingFlags[i] ?? false;
+                return (
                 <View key={i} style={styles.ingredientRow}>
-                  <View style={styles.ingredientDot} />
-                  <Text style={styles.ingredientName} numberOfLines={1}>{ing.name}</Text>
-                  <Text style={styles.ingredientAmount} numberOfLines={1}>{ing.amount}</Text>
+                  <View style={[styles.ingredientDot, missing && styles.ingredientDotMissing]} />
+                  <Text style={[styles.ingredientName, missing && styles.ingredientNameMissing]} numberOfLines={1}>
+                    {ing.name}{missing ? ` · ${t('recipe.missing')}` : ''}
+                  </Text>
+                  <Text style={styles.ingredientAmount} numberOfLines={1}>{scaledAmount}</Text>
                   <TouchableOpacity
                     style={styles.addIngBtn}
-                    onPress={() => handleAddIngredient(ing.name, ing.amount)}
+                    onPress={() => handleAddIngredient(ing.name, scaledAmount)}
                     activeOpacity={0.7}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Plus size={13} color={colors.primary} strokeWidth={2.5} />
                   </TouchableOpacity>
                 </View>
-              ))}
+                );
+              })}
 
               <TouchableOpacity
                 style={styles.addAllBtn}
@@ -685,11 +746,21 @@ export default function RecipeDetailScreen() {
         <TouchableOpacity
           style={styles.cookBtn}
           activeOpacity={0.85}
-          onPress={() => navigation.navigate('CookingMode', {
-            recipeId:   recipe.id,
-            recipeName: recipe.name,
-            steps:      recipe.steps,
-          })}
+          onPress={() => {
+            // snapshot the recipe so "Continue where you left off" can show it
+            // even after it drops off the recently-viewed list
+            registerInProgress({
+              id: recipe.id,
+              title: recipe.name,
+              image_url: recipe.image,
+              cook_time: recipe.cookTime,
+            });
+            navigation.navigate('CookingMode', {
+              recipeId:   recipe.id,
+              recipeName: recipe.name,
+              steps:      recipe.steps,
+            });
+          }}
         >
           <Text style={styles.cookBtnText}>{t('recipe.startCooking')}</Text>
         </TouchableOpacity>
@@ -699,6 +770,13 @@ export default function RecipeDetailScreen() {
         <Check size={14} color="#fff" strokeWidth={2.5} />
         <Text style={styles.toastText} numberOfLines={1}>{toastMsg}</Text>
       </Animated.View>
+
+      <AddToCollectionSheet
+        visible={collectionSheet}
+        recipeId={recipe.id}
+        onClose={() => setCollectionSheet(false)}
+        onChanged={() => { setSaved(true); showToast(t('saved.addedToCollection')); }}
+      />
     </View>
   );
 }
@@ -733,12 +811,19 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
     color: c.text, lineHeight: FontSize.xxl * 1.2,
   },
   ratingBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0,
     backgroundColor: c.tagQuick, paddingHorizontal: Spacing.sm,
     paddingVertical: 4, borderRadius: BorderRadius.full,
   },
   ratingText:   { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: c.tagQuickText },
   description:  { fontSize: FontSize.base, color: c.textSecondary, lineHeight: FontSize.base * 1.5, marginBottom: Spacing.sm },
+  aiDisclaimer: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+    backgroundColor: c.surface, borderRadius: BorderRadius.md,
+    padding: Spacing.sm, marginBottom: Spacing.sm,
+    borderWidth: 1, borderColor: c.borderLight,
+  },
+  aiDisclaimerText: { flex: 1, fontSize: FontSize.xs, color: c.textMuted, lineHeight: FontSize.xs * 1.5 },
   metaRow:      { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
   metaChip:     {
     fontSize: FontSize.xs, fontWeight: FontWeight.semibold,
@@ -797,7 +882,9 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
     paddingVertical: Spacing.sm + 1, borderBottomWidth: 1, borderBottomColor: c.borderLight,
   },
   ingredientDot:    { width: 8, height: 8, borderRadius: 4, backgroundColor: c.primary, flexShrink: 0 },
+  ingredientDotMissing:  { backgroundColor: c.error },
   ingredientName:   { flex: 1, fontSize: FontSize.base, color: c.text },
+  ingredientNameMissing: { color: c.error },
   ingredientAmount: { fontSize: FontSize.sm, color: c.textSecondary, fontWeight: FontWeight.medium, flexShrink: 0 },
   addIngBtn: {
     width: 28, height: 28, borderRadius: 14, flexShrink: 0,

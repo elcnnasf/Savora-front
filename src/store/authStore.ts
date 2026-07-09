@@ -8,6 +8,7 @@ import { useRecentlyViewedStore } from './recentlyViewedStore';
 import { useShoppingListStore } from './shoppingListStore';
 import { useCookingProgressStore } from './cookingProgressStore';
 import { useUserStore } from './userStore';
+import { initPurchases, logOutPurchases } from '../services/purchaseService';
 
 function clearUserLocalStores() {
   useRecentlyViewedStore.getState().clear();
@@ -67,6 +68,8 @@ interface AuthState {
   completeOnboarding: () => void;
   refreshUsage: () => Promise<void>;
   updateSubscription: (plan: 'premium' | 'pro' | 'free') => void;
+  updateProfile: (patch: { name?: string; avatar_url?: string | null }) => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 function toUser(apiUser: authApi.ApiUser, email?: string): User {
@@ -127,6 +130,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       token: session.access_token,
     });
     hydrateTastePrefs();
+    initPurchases(u.id);
   },
 
   signInWithGoogle: async (idToken: string) => {
@@ -143,6 +147,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       token: session.access_token,
     });
     hydrateTastePrefs();
+    initPurchases(u.id);
   },
 
   signUp: async (name, email, password) => {
@@ -156,6 +161,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     try { await authApi.logout(); } catch { /* ignore */ }
     try { await GoogleSignin.signOut(); } catch { /* ignore */ }
+    logOutPurchases();
+    await clearTokens();
+    await AsyncStorage.removeItem(USER_CACHE_KEY);
+    clearUserLocalStores();
+    set({ isAuthenticated: false, isGuest: true, user: null, token: null });
+  },
+
+  updateProfile: async (patch) => {
+    const res = await authApi.updateProfile(patch);
+    const current = get().user;
+    const u = toUser(res.data, current?.email);
+    // getMe/update returns no ai_usage — keep the usage we already had
+    const merged: User = { ...u, aiUsageToday: current?.aiUsageToday ?? u.aiUsageToday };
+    AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(merged)).catch(() => {});
+    set({ user: merged });
+  },
+
+  deleteAccount: async () => {
+    // Throws on failure so the screen can show an error and keep the session.
+    await authApi.deleteAccount();
+    try { await GoogleSignin.signOut(); } catch { /* ignore */ }
+    logOutPurchases();
     await clearTokens();
     await AsyncStorage.removeItem(USER_CACHE_KEY);
     clearUserLocalStores();
@@ -186,6 +213,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         token,
         isLoading: false,
       });
+      initPurchases(u.id);
       // Fresh install with an existing session: local prefs are gone but the
       // account's are on the server — restore them
       if (!useUserStore.getState().preferencesCompleted) hydrateTastePrefs();
